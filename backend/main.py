@@ -75,8 +75,14 @@ async def razorpay_webhook(
             "status": "pending_analysis"
         })
 
+        # In a real app, we would fetch these from the database
+        # For the hackathon demo, we can mock them based on the email or pass static values
+        # We will use this to show the "counterfactual sandbox" in the UI later
+        customer_ltv = 42000  # High LTV example
+        previous_failures = 0
+        
         # Trigger the AI Agent to analyze and act
-        ai_response = agent.analyze_and_recover(payment_data)
+        ai_response = agent.analyze_and_recover(payment_data, customer_ltv, previous_failures)
         recovery_logs.append({"event": "ai_action", "details": ai_response})
 
     return {"status": "ok"}
