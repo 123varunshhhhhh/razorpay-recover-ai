@@ -1,5 +1,5 @@
 from database import SessionLocal, engine, Base
-from models import Customer
+from models import Customer, RecoveryEvent
 
 # Create all tables
 Base.metadata.create_all(bind=engine)

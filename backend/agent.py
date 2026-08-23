@@ -75,7 +75,7 @@ tools = [send_upi_link, send_discount_link, flag_for_escalation, simple_retry]
 
 if GEMINI_API_KEY:
     model = genai.GenerativeModel(
-        model_name='gemini-1.5-pro-latest',
+        model_name='gemini-1.5-pro',
         tools=tools,
         system_instruction="""You are 'Recover AI', an intelligent financial agent for a merchant.
 Your goal is to maximize revenue recovery while minimizing costs.
@@ -102,7 +102,7 @@ def analyze_and_recover(payment_data: dict, customer_ltv: int, previous_failures
     start_time = time.time()
     
     if not model:
-        return {"error": "AI Agent not initialized (missing API key)"}
+        return {"status": "error", "error_message": "AI Agent not initialized. Please add GEMINI_API_KEY to backend/.env"}
 
     prompt = f"""
     Event: Payment Failed
