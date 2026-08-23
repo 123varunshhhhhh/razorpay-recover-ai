@@ -1,45 +1,47 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 export default function Dashboard() {
   const [isSimulating, setIsSimulating] = useState(false);
   const [recoveredAmount, setRecoveredAmount] = useState(18400);
-  const [logs, setLogs] = useState<any[]>([
-    {
-      id: 1,
-      type: "recovery",
-      message: "Agent processed failed payment for user@acme.com",
-      reasoning: "Customer LTV: ₹42k (High) -> Failure: Insufficient Funds -> Action: Offer UPI Link with 5% time-limited discount to prevent churn.",
-      cost: "$0.0004",
-      latency: "842ms",
-      status: "success"
-    }
-  ]);
+  const [logs, setLogs] = useState<any[]>([]);
 
-  const triggerSimulation = (scenario: string) => {
-    setIsSimulating(true);
-    // In a real app, this would hit the FastAPI backend
-    setTimeout(() => {
-      let newLog = { id: Date.now(), type: "recovery", message: "", reasoning: "", cost: "$0.0004", latency: Math.floor(Math.random() * (900 - 600) + 600) + "ms", status: "success" };
-      
-      if (scenario === 'high_ltv') {
-        newLog.message = "Agent processed failed payment for vip@corp.com";
-        newLog.reasoning = "Customer LTV: ₹95k (Very High) -> Action: Time-limited 10% discount generated to secure sale.";
-        setRecoveredAmount(prev => prev + 12000);
-      } else if (scenario === 'fraud') {
-        newLog.message = "Agent processed repeated failure for anon@sus.com";
-        newLog.reasoning = "Repeated failures on same card (Risk High) -> Action: Blocked retry. Flagged for human escalation.";
-        newLog.status = "flagged";
-      } else {
-        newLog.message = "Agent processed generic failure for new@user.com";
-        newLog.reasoning = "Customer LTV: ₹500 (Low) -> Action: Sent standard UPI link. No discount offered to preserve margin.";
-        setRecoveredAmount(prev => prev + 500);
+  // Fetch live logs from FastAPI backend every 2 seconds
+  useEffect(() => {
+    const fetchLogs = async () => {
+      try {
+        const res = await fetch("http://localhost:8000/api/logs");
+        const data = await res.json();
+        if (data.logs) {
+          setLogs(data.logs);
+        }
+      } catch (e) {
+        console.error("Failed to fetch logs. Is backend running?", e);
       }
+    };
+    fetchLogs();
+    const interval = setInterval(fetchLogs, 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const triggerSimulation = async (scenario: string) => {
+    setIsSimulating(true);
+    try {
+      await fetch("http://localhost:8000/api/sandbox/simulate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scenario }),
+      });
       
-      setLogs([newLog, ...logs]);
-      setIsSimulating(false);
-    }, 1500);
+      // Optimistically update the recovered amount for the demo feel
+      if (scenario === 'high_ltv') setRecoveredAmount(prev => prev + 12000);
+      else if (scenario === 'low_ltv') setRecoveredAmount(prev => prev + 500);
+
+    } catch (e) {
+      console.error("Simulation failed", e);
+    }
+    setIsSimulating(false);
   }
 
   return (
