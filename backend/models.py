@@ -20,6 +20,7 @@ class RecoveryEvent(Base):
     id = Column(Integer, primary_key=True, index=True)
     customer_id = Column(Integer, ForeignKey("customers.id"))
     
+    razorpay_event_id = Column(String, unique=True, index=True, nullable=True) # Idempotency key
     amount = Column(Integer)
     currency = Column(String, default="INR")
     failure_reason = Column(String)
