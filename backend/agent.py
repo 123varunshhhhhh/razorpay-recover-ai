@@ -67,7 +67,18 @@ def simple_retry(reasoning: str, customer_email: str) -> str:
         "details": f"Scheduled silent retry for {customer_email}"
     })
 
-tools = [send_upi_link, send_discount_link, flag_for_escalation, simple_retry]
+def log_promise_to_pay(reasoning: str, customer_email: str, promised_date_iso: str) -> str:
+    """
+    Logs a promise-to-pay date for an overdue receivable.
+    Use this when the user indicates they will pay by a certain date.
+    """
+    return json.dumps({
+        "action": "log_promise_to_pay",
+        "reasoning": reasoning,
+        "details": f"Logged promise-to-pay date {promised_date_iso} for {customer_email}"
+    })
+
+tools = [send_upi_link, send_discount_link, flag_for_escalation, simple_retry, log_promise_to_pay]
 
 # ---------------------------------------------------------------------------
 # AGENT INITIALIZATION
@@ -75,7 +86,7 @@ tools = [send_upi_link, send_discount_link, flag_for_escalation, simple_retry]
 
 if GEMINI_API_KEY:
     model = genai.GenerativeModel(
-        model_name='gemini-1.5-pro',
+        model_name='gemini-3.5-flash-lite',
         tools=tools,
         system_instruction="""You are 'Recover AI', an intelligent financial agent for a merchant.
 Your goal is to maximize revenue recovery while minimizing costs.
@@ -83,18 +94,22 @@ Your goal is to maximize revenue recovery while minimizing costs.
 You will be provided with a payment failure event, including the customer's Lifetime Value (LTV).
 Analyze the event and choose exactly ONE tool to execute the recovery strategy.
 
+COMPLIANCE & GUARDRAILS (STRICT):
+- If the customer has 3 or more failed attempts, you MUST use `flag_for_escalation` and stop automated outreach.
+
 STRATEGY GUIDELINES:
 1. Low LTV + Insufficient Funds -> Use send_upi_link or simple_retry. Do NOT give discounts.
 2. High LTV (> 10000 INR) + Cart Abandonment/Failure -> Use send_discount_link (MAX 10%).
-3. Repeated Failures or Suspected Fraud -> Use flag_for_escalation.
+3. Overdue Receivables / Promise to pay -> Use log_promise_to_pay with the provided ISO date.
+4. Repeated Failures (>= 3) or Suspected Fraud -> Use flag_for_escalation.
 
-You MUST provide your detailed internal monologue in the `reasoning` parameter of the tool you call, explaining step-by-step why you chose that action based on the LTV and failure reason.
+You MUST provide your internal monologue in the `reasoning` parameter. Be extremely concise and punchy. Do not use repetitive boilerplate phrases like "Per the strict compliance guardrails...". Just state the logic directly (e.g. "LTV is 50K, customer is VIP. Sending 10% discount to prevent churn." or "3+ strikes reached. Escalating immediately.")
 """
     )
 else:
     model = None
 
-def analyze_and_recover(payment_data: dict, customer_ltv: int, previous_failures: int) -> dict:
+def analyze_and_recover(payment_data: dict, customer_ltv: int, previous_failures: int, failed_attempts_count: int) -> dict:
     """
     Feeds the payment data + context to the Agent.
     """
@@ -110,7 +125,8 @@ def analyze_and_recover(payment_data: dict, customer_ltv: int, previous_failures
     - Customer Email: {payment_data.get('email')}
     - Failure Reason: {payment_data.get('error_description')}
     - Customer LTV: {customer_ltv} INR
-    - Previous Failures Today: {previous_failures}
+    - Session Failures Today: {previous_failures}
+    - Lifetime Failed Attempts: {failed_attempts_count} (CRITICAL: If >= 3, you MUST escalate)
     
     Analyze and execute the best recovery tool.
     """
@@ -121,33 +137,39 @@ def analyze_and_recover(payment_data: dict, customer_ltv: int, previous_failures
         
         latency_ms = int((time.time() - start_time) * 1000)
         
-        # The agent's tool call result is returned in response.parts if auto function calling succeeded.
         # We'll extract the JSON dumped by our tool functions.
         agent_action = None
         for part in chat.history:
-            if part.role == 'model' and part.parts:
-                for p in part.parts:
-                    if p.function_call:
-                        # We captured the function call, but we want the actual executed output
-                        pass
             if part.role == 'user' and part.parts: # The SDK returns function responses as 'user' role
                 for p in part.parts:
                     if p.function_response:
-                        # Parse the JSON returned by our tool
-                        agent_action = p.function_response.response
-                        if hasattr(agent_action, 'to_dict'):
-                            agent_action = agent_action.to_dict()
+                        # The function response is a MapComposite with a 'result' string (which contains our JSON)
+                        try:
+                            raw_resp = dict(p.function_response.response)
+                            if "result" in raw_resp:
+                                agent_action = json.loads(raw_resp["result"])
+                        except Exception as e:
+                            print(f"Error parsing function response: {e}")
 
         # Fallback if we can't extract the structured tool response
         if not agent_action:
-            agent_action = {"raw_text": response.text}
+            agent_action = {"action": "unknown", "reasoning": "Failed to extract action from AI", "raw_text": response.text}
+
+        estimated_cost_usd = 0.0004
+        try:
+            if hasattr(response, 'usage_metadata'):
+                in_tokens = response.usage_metadata.prompt_token_count
+                out_tokens = response.usage_metadata.candidates_token_count
+                estimated_cost_usd = (in_tokens * 0.000000075) + (out_tokens * 0.00000030)
+        except Exception:
+            pass
 
         return {
             "status": "success",
             "agent_action": agent_action,
             "metrics": {
                 "latency_ms": latency_ms,
-                "estimated_cost_usd": 0.0004 # Approximate cost per call
+                "estimated_cost_usd": estimated_cost_usd
             }
         }
     except Exception as e:
