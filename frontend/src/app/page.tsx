@@ -4,24 +4,32 @@ import { useState, useEffect } from 'react';
 
 export default function Dashboard() {
   const [isSimulating, setIsSimulating] = useState(false);
-  const [recoveredAmount, setRecoveredAmount] = useState(18400);
+  const [metrics, setMetrics] = useState({ at_risk_amount: 0, recovered_amount: 0, recovery_percentage: 0 });
   const [logs, setLogs] = useState<any[]>([]);
+  const [receivables, setReceivables] = useState<any[]>([]);
 
-  // Fetch live logs from FastAPI backend every 2 seconds
+  // Fetch live logs and metrics from FastAPI backend every 2 seconds
   useEffect(() => {
-    const fetchLogs = async () => {
+    const fetchData = async () => {
       try {
-        const res = await fetch("http://127.0.0.1:8000/api/logs");
-        const data = await res.json();
-        if (data.logs) {
-          setLogs(data.logs);
-        }
+        const [logsRes, metricsRes, recRes] = await Promise.all([
+          fetch("http://127.0.0.1:8000/api/logs"),
+          fetch("http://127.0.0.1:8000/api/metrics"),
+          fetch("http://127.0.0.1:8000/api/receivables")
+        ]);
+        const logsData = await logsRes.json();
+        const metricsData = await metricsRes.json();
+        const recData = await recRes.json();
+        
+        if (logsData.logs) setLogs(logsData.logs);
+        if (metricsData) setMetrics(metricsData);
+        if (recData.receivables) setReceivables(recData.receivables);
       } catch (e) {
-        console.error("Failed to fetch logs. Is backend running?", e);
+        console.error("Failed to fetch data", e);
       }
     };
-    fetchLogs();
-    const interval = setInterval(fetchLogs, 2000);
+    fetchData();
+    const interval = setInterval(fetchData, 2000);
     return () => clearInterval(interval);
   }, []);
 
@@ -33,13 +41,20 @@ export default function Dashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ scenario }),
       });
-      
-      // Optimistically update the recovered amount for the demo feel
-      if (scenario === 'high_ltv') setRecoveredAmount(prev => prev + 12000);
-      else if (scenario === 'low_ltv') setRecoveredAmount(prev => prev + 500);
-
     } catch (e) {
       console.error("Simulation failed", e);
+    }
+    setIsSimulating(false);
+  }
+
+  const triggerBatchSimulation = async () => {
+    setIsSimulating(true);
+    try {
+      await fetch("http://127.0.0.1:8000/api/sandbox/batch_simulate", {
+        method: "POST"
+      });
+    } catch (e) {
+      console.error("Batch simulation failed", e);
     }
     setIsSimulating(false);
   }
@@ -54,9 +69,15 @@ export default function Dashboard() {
           </h1>
           <p className="text-slate-400 text-sm mt-1">Intelligent Revenue Rescue</p>
         </div>
-        <div className="text-right">
-          <p className="text-sm text-slate-400 uppercase tracking-wider font-semibold mb-1">Session Revenue Recovered</p>
-          <p className="text-4xl font-mono font-bold text-emerald-400">₹{recoveredAmount.toLocaleString()}</p>
+        <div className="text-right flex gap-8">
+          <div>
+            <p className="text-sm text-slate-400 uppercase tracking-wider font-semibold mb-1">Total At-Risk Revenue</p>
+            <p className="text-3xl font-mono font-bold text-rose-400">₹{(metrics.at_risk_amount / 100).toLocaleString()}</p>
+          </div>
+          <div>
+            <p className="text-sm text-slate-400 uppercase tracking-wider font-semibold mb-1">Recovered Revenue ({metrics.recovery_percentage}%)</p>
+            <p className="text-4xl font-mono font-bold text-emerald-400">₹{(metrics.recovered_amount / 100).toLocaleString()}</p>
+          </div>
         </div>
       </header>
 
@@ -64,11 +85,18 @@ export default function Dashboard() {
         
         {/* Left Col: Sandbox Control */}
         <div className="lg:col-span-1 space-y-6">
+          <div className="glass-panel rounded-xl p-6 border border-emerald-500/30 bg-emerald-500/5">
+            <h2 className="text-xl font-semibold mb-2 text-white/90">Batch Recovery Run</h2>
+            <p className="text-slate-400 text-sm mb-4">
+              Simulate 4 random failed payment events in bulk to see the recovery metrics climb.
+            </p>
+            <button onClick={triggerBatchSimulation} disabled={isSimulating} className="w-full text-center px-4 py-3 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white font-bold transition-colors">
+              {isSimulating ? "Processing Batch..." : "Run Batch Simulation"}
+            </button>
+          </div>
+
           <div className="glass-panel rounded-xl p-6">
             <h2 className="text-xl font-semibold mb-4 text-white/90">Counterfactual Sandbox</h2>
-            <p className="text-slate-400 text-sm mb-6">
-              Simulate webhook events to test the agent's decision tree live.
-            </p>
             
             <div className="space-y-3">
               <button onClick={() => triggerSimulation('high_ltv')} disabled={isSimulating} className="w-full text-left px-4 py-3 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 transition-colors">
@@ -85,17 +113,44 @@ export default function Dashboard() {
                 <span className="block font-medium text-rose-300">Simulate High Fraud Risk</span>
                 <span className="text-xs text-slate-400">Expects: Human Escalation Flag</span>
               </button>
+              
+              <button onClick={() => triggerSimulation('compliance')} disabled={isSimulating} className="w-full text-left px-4 py-3 rounded-lg bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/30 transition-colors">
+                <span className="block font-medium text-orange-300">Simulate Compliance Violation</span>
+                <span className="text-xs text-slate-400">Expects: Escalation on 3+ strikes</span>
+              </button>
             </div>
             {isSimulating && <p className="text-sm text-indigo-400 mt-4 animate-pulse">Agent is thinking...</p>}
           </div>
 
           <div className="glass-panel rounded-xl p-6">
-            <h3 className="text-sm uppercase tracking-wider text-slate-400 font-semibold mb-3">Live Guardrails</h3>
+            <h3 className="text-sm uppercase tracking-wider text-slate-400 font-semibold mb-3">Compliance Guardrails</h3>
             <ul className="space-y-2 text-sm text-slate-300">
               <li className="flex items-center"><span className="w-2 h-2 rounded-full bg-emerald-500 mr-2"></span>Max Discount: 10%</li>
-              <li className="flex items-center"><span className="w-2 h-2 rounded-full bg-emerald-500 mr-2"></span>Only 1 discount per 30 days</li>
-              <li className="flex items-center"><span className="w-2 h-2 rounded-full bg-emerald-500 mr-2"></span>Force human review on 3+ fails</li>
+              <li className="flex items-center"><span className="w-2 h-2 rounded-full bg-emerald-500 mr-2"></span>Log Promise-to-Pay dates</li>
+              <li className="flex items-center"><span className="w-2 h-2 rounded-full bg-emerald-500 mr-2"></span>Stop Outreach on 3+ fails</li>
             </ul>
+          </div>
+          
+          <div className="glass-panel rounded-xl p-6">
+            <h3 className="text-sm uppercase tracking-wider text-slate-400 font-semibold mb-3">Upcoming Receivables</h3>
+            {receivables.length === 0 ? (
+              <p className="text-sm text-slate-500">No active promises to pay.</p>
+            ) : (
+              <div className="space-y-3">
+                {receivables.map(r => (
+                  <div key={r.id} className="flex justify-between items-center bg-white/5 p-3 rounded-lg border border-white/10">
+                    <div>
+                      <p className="text-sm font-medium text-slate-200">{r.customer_email}</p>
+                      <p className="text-xs text-slate-400 mt-1">Due: {r.promise_to_pay_date ? r.promise_to_pay_date.split('T')[0] : 'TBD'}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-mono text-emerald-400">₹{(r.amount / 100).toLocaleString()}</p>
+                      <p className={`text-[10px] uppercase tracking-wider mt-1 ${r.status === 'promised' ? 'text-blue-400' : 'text-rose-400'}`}>{r.status}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -106,16 +161,20 @@ export default function Dashboard() {
             <span className="ml-3 px-2 py-1 bg-green-500/20 text-green-400 text-xs rounded-full border border-green-500/30 animate-pulse">Live</span>
           </h2>
           
-          <div className="space-y-4 max-h-[600px] overflow-y-auto pr-2">
+          <div className="space-y-4 max-h-[800px] overflow-y-auto pr-2">
             {logs.map(log => (
               <div key={log.id} className="glass-card rounded-xl p-5 relative overflow-hidden group">
                 <div className={`absolute top-0 left-0 w-1 h-full ${log.status === 'success' ? 'bg-emerald-500' : 'bg-rose-500'}`}></div>
                 
                 <div className="flex justify-between items-start mb-3">
-                  <p className="font-medium text-slate-200">{log.message}</p>
-                  <div className="flex gap-2 text-xs font-mono text-slate-500">
-                    <span className="bg-white/5 px-2 py-1 rounded">Cost: {log.cost}</span>
-                    <span className="bg-white/5 px-2 py-1 rounded">Lat: {log.latency}</span>
+                  <div>
+                    <span className="inline-block px-2 py-1 rounded bg-white/10 text-white/80 text-xs font-mono mr-3 uppercase">{log.action}</span>
+                    <span className="font-mono text-emerald-400">₹{(log.amount / 100).toLocaleString()}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-xs font-mono text-slate-500 bg-black/30 px-2 py-1 rounded">
+                      ⏱ {log.latency_ms}ms | 🪙 ₹{(log.cost_usd * 84).toFixed(3)}
+                    </span>
                   </div>
                 </div>
                 
