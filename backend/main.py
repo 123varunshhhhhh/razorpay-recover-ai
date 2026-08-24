@@ -34,8 +34,17 @@ def read_root():
 def get_logs(db: Session = Depends(get_db)):
     """Returns the recent recovery actions taken by the AI."""
     events = crud.get_recent_recovery_events(db, limit=20)
-    return {"logs": [{"id": e.id, "amount": e.amount, "action": e.agent_action, "reasoning": e.agent_reasoning, "status": e.status} for e in events]}
+    return {"logs": [{"id": e.id, "amount": e.amount, "action": e.agent_action, "reasoning": e.agent_reasoning, "status": e.status, "latency_ms": e.latency_ms, "cost_usd": e.cost_usd} for e in events]}
 
+@app.get("/api/receivables")
+def get_receivables(db: Session = Depends(get_db)):
+    """Returns the upcoming promises to pay for the dashboard."""
+    receivables = crud.get_active_receivables(db)
+    return {"receivables": [{"id": r.id, "customer_email": r.customer.email if r.customer else "Unknown", "amount": r.amount, "status": r.status, "promise_to_pay_date": r.promise_to_pay_date.isoformat() if r.promise_to_pay_date else None} for r in receivables]}
+@app.get("/api/metrics")
+def get_dashboard_metrics(db: Session = Depends(get_db)):
+    """Returns the total batch recovery metrics for the UI."""
+    return crud.get_metrics(db)
 class SandboxSimulationRequest(BaseModel):
     scenario: str
 
@@ -50,6 +59,18 @@ async def simulate_sandbox_webhook(request: SandboxSimulationRequest, db: Sessio
         scenario_email = "vip@corp.com"
     elif request.scenario == "fraud":
         scenario_email = "anon@sus.com"
+    elif request.scenario == "compliance":
+        scenario_email = "repeat_offender@spam.com"
+        # Pre-seed this user with 3 failures so the guardrail fires immediately
+        customer = crud.get_customer_by_email(db, scenario_email)
+        if not customer:
+            from models import Customer
+            customer = Customer(email=scenario_email, failed_attempts_count=3)
+            db.add(customer)
+            db.commit()
+        else:
+            customer.failed_attempts_count = 3
+            db.commit()
 
     mock_event_id = f"evt_sandbox_{uuid.uuid4().hex[:8]}"
     mock_payload = {
@@ -72,6 +93,48 @@ async def simulate_sandbox_webhook(request: SandboxSimulationRequest, db: Sessio
     await process_webhook_event(mock_payload, mock_event_id, db)
     
     return {"status": "simulated", "scenario": request.scenario}
+
+@app.post("/api/sandbox/batch_simulate")
+async def simulate_batch(db: Session = Depends(get_db)):
+    """Simulates a batch of failed payments to demonstrate system scale and metrics."""
+    import random
+    
+    # 4 random events for the demo (to stay under the 5 RPM free tier limit)
+    tasks = []
+    for _ in range(4):
+        scenario = random.choice(["high_ltv", "standard", "fraud"])
+        
+        scenario_email = "new@user.com"
+        if scenario == "high_ltv":
+            scenario_email = "vip@corp.com"
+        elif scenario == "fraud":
+            scenario_email = "anon@sus.com"
+
+        mock_event_id = f"evt_batch_{uuid.uuid4().hex[:8]}"
+        mock_payload = {
+            "event": "payment.failed",
+            "payload": {
+                "payment": {
+                    "entity": {
+                        "id": f"pay_{uuid.uuid4().hex[:8]}",
+                        "amount": 1500000 if scenario == "high_ltv" else (50000 if scenario == "standard" else 0),
+                        "currency": "INR",
+                        "email": scenario_email,
+                        "contact": "9999999999",
+                        "error_description": "Insufficient funds" if scenario != "fraud" else "Fraud risk suspected by issuer",
+                    }
+                }
+            }
+        }
+        
+        # Add to tasks list instead of awaiting sequentially
+        tasks.append(process_webhook_event(mock_payload, mock_event_id, db))
+        
+    # Execute all 4 simulations concurrently to eliminate UI lag
+    import asyncio
+    await asyncio.gather(*tasks)
+    
+    return {"status": "batch_completed"}
 
 @app.post("/api/webhook")
 async def razorpay_webhook(
@@ -111,6 +174,15 @@ async def process_webhook_event(payload_json: dict, event_id: str, db: Session):
 
     event_type = payload_json.get("event")
     
+    # 2. Closed-Loop Processing for successful recoveries
+    if event_type == "payment_link.paid":
+        payment_data = payload_json["payload"]["payment_link"]["entity"]
+        customer_email = payment_data.get("customer", {}).get("email") or "unknown" # Fallback if email isn't in the object
+        
+        crud.mark_event_recovered(db, customer_email)
+        print(f"Closed Loop: Marked latest intervention for {customer_email} as recovered.")
+        return
+
     if event_type == "payment.failed":
         payment_data = payload_json["payload"]["payment"]["entity"]
         customer_email = payment_data.get("email")
@@ -119,13 +191,15 @@ async def process_webhook_event(payload_json: dict, event_id: str, db: Session):
         customer = crud.get_customer_by_email(db, customer_email)
         if not customer:
             customer_ltv = 0
+            failed_attempts_count = 0
         else:
             customer_ltv = customer.lifetime_value
+            failed_attempts_count = crud.increment_failed_attempts(db, customer.id)
 
         previous_failures = 0
 
         # 3. Trigger the AI Agent
-        ai_response = agent.analyze_and_recover(payment_data, customer_ltv, previous_failures)
+        ai_response = agent.analyze_and_recover(payment_data, customer_ltv, previous_failures, failed_attempts_count)
         
         # 4. Parse Action & Reasoning
         action_type = "unknown"
@@ -134,17 +208,40 @@ async def process_webhook_event(payload_json: dict, event_id: str, db: Session):
             action_data = ai_response.get("agent_action", {})
             action_type = action_data.get("action", "unknown")
             reasoning = action_data.get("reasoning", "")
+            
+            if action_type == "log_promise_to_pay" and customer:
+                # Extract date from details for demo purposes
+                try:
+                    promise_date = action_data.get("details", "").split("date ")[-1].split(" for")[0]
+                    crud.log_promise_to_pay(db, customer.id, promise_date)
+                except:
+                    pass
+        else:
+            reasoning = f"AI Error: {ai_response.get('error_message', 'Unknown Error')}"
+
+        # Extract metrics
+        latency_ms = 0
+        cost_usd = 0.0
+        if "metrics" in ai_response:
+            latency_ms = ai_response["metrics"].get("latency_ms", 0)
+            cost_usd = ai_response["metrics"].get("estimated_cost_usd", 0.0)
+
+        final_amount = payment_data.get("amount", 0)
+        if action_type == "flag_for_escalation":
+            final_amount = 0
 
         # 5. Persist to DB using CRUD layer
         crud.create_recovery_event(
             db=db,
             customer_id=customer.id if customer else None,
             razorpay_event_id=event_id,
-            amount=payment_data.get("amount", 0),
+            amount=final_amount,
             currency=payment_data.get("currency", "INR"),
             failure_reason=payment_data.get("error_description", ""),
             agent_action=action_type,
             agent_reasoning=reasoning,
-            status="success" if action_type != "unknown" else "failed"
+            status="success" if action_type != "unknown" else "failed",
+            latency_ms=latency_ms,
+            cost_usd=cost_usd
         )
 
