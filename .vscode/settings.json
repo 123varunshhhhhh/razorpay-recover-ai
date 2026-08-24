@@ -1,9 +1,9 @@
 {
     "python.analysis.extraPaths": [
-        "./backend"
+        "C:\\Users\\Varun\\OneDrive\\Documents\\Buildathon\\backend"
     ],
     "python.autoComplete.extraPaths": [
-        "./backend"
+        "C:\\Users\\Varun\\OneDrive\\Documents\\Buildathon\\backend"
     ],
-    "python.defaultInterpreterPath": "${workspaceFolder}/backend/venv/Scripts/python.exe"
+    "python.defaultInterpreterPath": "C:\\Users\\Varun\\OneDrive\\Documents\\Buildathon\\backend\\venv\\Scripts\\python.exe"
 }
