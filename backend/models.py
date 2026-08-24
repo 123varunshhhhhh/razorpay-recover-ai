@@ -11,8 +11,26 @@ class Customer(Base):
     contact = Column(String, nullable=True)
     lifetime_value = Column(Integer, default=0) # Stored in paise/cents
     fraud_flag = Column(Boolean, default=False)
+    failed_attempts_count = Column(Integer, default=0)
+    opt_out = Column(Boolean, default=False)
     
     events = relationship("RecoveryEvent", back_populates="customer")
+    receivables = relationship("Receivable", back_populates="customer")
+
+class Receivable(Base):
+    __tablename__ = "receivables"
+
+    id = Column(Integer, primary_key=True, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"))
+    
+    amount = Column(Integer)
+    currency = Column(String, default="INR")
+    due_date = Column(DateTime(timezone=True))
+    
+    status = Column(String, default="overdue") # overdue, promised, paid
+    promise_to_pay_date = Column(DateTime(timezone=True), nullable=True)
+    
+    customer = relationship("Customer", back_populates="receivables")
 
 class RecoveryEvent(Base):
     __tablename__ = "recovery_events"
@@ -31,6 +49,8 @@ class RecoveryEvent(Base):
     
     # Track the outcome of our intervention
     status = Column(String, default="pending_analysis") # pending_analysis, intervention_sent, recovered, failed
+    latency_ms = Column(Integer, default=0)
+    cost_usd = Column(Float, default=0.0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     customer = relationship("Customer", back_populates="events")
