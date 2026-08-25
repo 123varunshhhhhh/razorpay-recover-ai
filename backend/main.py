@@ -34,7 +34,7 @@ def read_root():
 def get_logs(db: Session = Depends(get_db)):
     """Returns the recent recovery actions taken by the AI."""
     events = crud.get_recent_recovery_events(db, limit=20)
-    return {"logs": [{"id": e.id, "amount": e.amount, "action": e.agent_action, "reasoning": e.agent_reasoning, "status": e.status, "latency_ms": e.latency_ms, "cost_usd": e.cost_usd} for e in events]}
+    return {"logs": [{"id": e.id, "amount": e.amount, "recovered_amount": e.recovered_amount, "action": e.agent_action, "reasoning": e.agent_reasoning, "status": e.status, "latency_ms": e.latency_ms, "cost_usd": e.cost_usd} for e in events]}
 
 @app.get("/api/receivables")
 def get_receivables(db: Session = Depends(get_db)):
@@ -61,16 +61,6 @@ async def simulate_sandbox_webhook(request: SandboxSimulationRequest, db: Sessio
         scenario_email = "anon@sus.com"
     elif request.scenario == "compliance":
         scenario_email = "repeat_offender@spam.com"
-        # Pre-seed this user with 3 failures so the guardrail fires immediately
-        customer = crud.get_customer_by_email(db, scenario_email)
-        if not customer:
-            from models import Customer
-            customer = Customer(email=scenario_email, failed_attempts_count=3)
-            db.add(customer)
-            db.commit()
-        else:
-            customer.failed_attempts_count = 3
-            db.commit()
 
     mock_event_id = f"evt_sandbox_{uuid.uuid4().hex[:8]}"
     mock_payload = {
@@ -94,22 +84,26 @@ async def simulate_sandbox_webhook(request: SandboxSimulationRequest, db: Sessio
     
     return {"status": "simulated", "scenario": request.scenario}
 
+@app.post("/api/sandbox/reset_db")
+async def reset_database():
+    """Drops and reseeds the entire database instantly for live demos."""
+    import seed
+    seed.seed_db()
+    return {"status": "reset_complete"}
+
 @app.post("/api/sandbox/batch_simulate")
 async def simulate_batch(db: Session = Depends(get_db)):
-    """Simulates a batch of failed payments to demonstrate system scale and metrics."""
-    import random
+    """Simulates a deterministic batch of failed payments to guarantee a varied demo trace."""
     
-    # 4 random events for the demo (to stay under the 5 RPM free tier limit)
-    tasks = []
-    for _ in range(4):
-        scenario = random.choice(["high_ltv", "standard", "fraud"])
-        
-        scenario_email = "new@user.com"
-        if scenario == "high_ltv":
-            scenario_email = "vip@corp.com"
-        elif scenario == "fraud":
-            scenario_email = "anon@sus.com"
-
+    # 4 curated events targeting the isolated batch customers
+    batch_scenarios = [
+        {"email": "batch_1_vip@corp.com", "amount": 2500000, "reason": "Insufficient funds"},
+        {"email": "batch_2_standard@user.com", "amount": 50000, "reason": "Bank declined"},
+        {"email": "batch_3_fraud@sus.com", "amount": 10000, "reason": "Fraud risk suspected by issuer"},
+        {"email": "batch_4_repeat@spam.com", "amount": 50000, "reason": "Insufficient funds"}
+    ]
+    
+    for scenario in batch_scenarios:
         mock_event_id = f"evt_batch_{uuid.uuid4().hex[:8]}"
         mock_payload = {
             "event": "payment.failed",
@@ -117,23 +111,18 @@ async def simulate_batch(db: Session = Depends(get_db)):
                 "payment": {
                     "entity": {
                         "id": f"pay_{uuid.uuid4().hex[:8]}",
-                        "amount": 1500000 if scenario == "high_ltv" else (50000 if scenario == "standard" else 0),
+                        "amount": scenario["amount"],
                         "currency": "INR",
-                        "email": scenario_email,
+                        "email": scenario["email"],
                         "contact": "9999999999",
-                        "error_description": "Insufficient funds" if scenario != "fraud" else "Fraud risk suspected by issuer",
+                        "error_description": scenario["reason"],
                     }
                 }
             }
         }
         
-        # Add to tasks list instead of awaiting sequentially
-        tasks.append(process_webhook_event(mock_payload, mock_event_id, db))
+        await process_webhook_event(mock_payload, mock_event_id, db)
         
-    # Execute all 4 simulations concurrently to eliminate UI lag
-    import asyncio
-    await asyncio.gather(*tasks)
-    
     return {"status": "batch_completed"}
 
 @app.post("/api/webhook")
@@ -226,16 +215,20 @@ async def process_webhook_event(payload_json: dict, event_id: str, db: Session):
             latency_ms = ai_response["metrics"].get("latency_ms", 0)
             cost_usd = ai_response["metrics"].get("estimated_cost_usd", 0.0)
 
-        final_amount = payment_data.get("amount", 0)
+        original_amount = payment_data.get("amount", 0)
+        recovered_amount = original_amount
         if action_type == "flag_for_escalation":
-            final_amount = 0
+            recovered_amount = 0
+        elif action_type == "send_discount_link" and "discounted_amount_paise" in action_data:
+            recovered_amount = action_data.get("discounted_amount_paise")
 
         # 5. Persist to DB using CRUD layer
         crud.create_recovery_event(
             db=db,
             customer_id=customer.id if customer else None,
             razorpay_event_id=event_id,
-            amount=final_amount,
+            amount=original_amount,
+            recovered_amount=recovered_amount,
             currency=payment_data.get("currency", "INR"),
             failure_reason=payment_data.get("error_description", ""),
             agent_action=action_type,
