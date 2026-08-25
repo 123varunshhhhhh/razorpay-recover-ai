@@ -85,11 +85,12 @@ export default function Dashboard() {
           {/* Logo */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div style={{
-              width: '40px', height: '40px', borderRadius: '10px',
-              background: 'linear-gradient(135deg, #6366f1, #3b82f6)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: '18px', boxShadow: '0 0 20px rgba(99,102,241,0.4)',
-            }}>🤖</div>
+              width: '44px', height: '44px', borderRadius: '12px',
+              overflow: 'hidden', flexShrink: 0,
+              boxShadow: '0 0 20px rgba(99,102,241,0.5)',
+            }}>
+              <img src="/logo.jpg" alt="Recover AI Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            </div>
             <div>
               <h1 style={{
                 fontSize: '1.5rem', fontWeight: '800', margin: 0,
