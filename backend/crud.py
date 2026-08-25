@@ -15,7 +15,7 @@ def check_event_processed(db: Session, razorpay_event_id: str) -> bool:
         return False
     return db.query(RecoveryEvent).filter(RecoveryEvent.razorpay_event_id == razorpay_event_id).first() is not None
 
-def create_recovery_event(db: Session, customer_id: int, razorpay_event_id: str, amount: int, currency: str, 
+def create_recovery_event(db: Session, customer_id: int, razorpay_event_id: str, amount: int, recovered_amount: int, currency: str, 
                           failure_reason: str, agent_action: str, agent_reasoning: str, status: str,
                           latency_ms: int = 0, cost_usd: float = 0.0) -> RecoveryEvent:
     """Log a new intervention attempted by the AI agent."""
@@ -23,6 +23,7 @@ def create_recovery_event(db: Session, customer_id: int, razorpay_event_id: str,
         customer_id=customer_id,
         razorpay_event_id=razorpay_event_id,
         amount=amount,
+        recovered_amount=recovered_amount,
         currency=currency,
         failure_reason=failure_reason,
         agent_action=agent_action,
@@ -67,7 +68,7 @@ def get_metrics(db: Session):
     at_risk_rec = db.query(func.sum(Receivable.amount)).filter(Receivable.status == "overdue").scalar() or 0
     
     # Calculate recovered amounts (success events + promised receivables)
-    recovered_events = db.query(func.sum(RecoveryEvent.amount)).filter(RecoveryEvent.status == "success").scalar() or 0
+    recovered_events = db.query(func.sum(RecoveryEvent.recovered_amount)).filter(RecoveryEvent.status == "success").scalar() or 0
     promised_rec = db.query(func.sum(Receivable.amount)).filter(Receivable.status == "promised").scalar() or 0
     
     total_at_risk = at_risk + at_risk_rec + promised_rec
