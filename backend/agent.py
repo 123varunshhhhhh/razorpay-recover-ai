@@ -42,6 +42,7 @@ def send_discount_link(reasoning: str, customer_email: str, amount_in_paise: int
     return json.dumps({
         "action": "send_discount_link",
         "reasoning": reasoning,
+        "discounted_amount_paise": discounted_amount,
         "details": f"Sent {discount_percentage}% discount link for {discounted_amount/100} INR to {customer_email}"
     })
 
@@ -124,7 +125,7 @@ def analyze_and_recover(payment_data: dict, customer_ltv: int, previous_failures
     - Amount: {payment_data.get('amount')} paise
     - Customer Email: {payment_data.get('email')}
     - Failure Reason: {payment_data.get('error_description')}
-    - Customer LTV: {customer_ltv} INR
+    - Customer LTV: {customer_ltv / 100} INR
     - Session Failures Today: {previous_failures}
     - Lifetime Failed Attempts: {failed_attempts_count} (CRITICAL: If >= 3, you MUST escalate)
     
@@ -132,24 +133,25 @@ def analyze_and_recover(payment_data: dict, customer_ltv: int, previous_failures
     """
     
     try:
-        chat = model.start_chat(enable_automatic_function_calling=True)
-        response = chat.send_message(prompt)
+        # We DO NOT use enable_automatic_function_calling=True because that forces the SDK
+        # to execute the function and send the result back to Gemini for a second round-trip.
+        # By manually parsing the first function_call, we cut latency in HALF.
+        response = model.generate_content(prompt)
         
         latency_ms = int((time.time() - start_time) * 1000)
         
-        # We'll extract the JSON dumped by our tool functions.
         agent_action = None
-        for part in chat.history:
-            if part.role == 'user' and part.parts: # The SDK returns function responses as 'user' role
-                for p in part.parts:
-                    if p.function_response:
-                        # The function response is a MapComposite with a 'result' string (which contains our JSON)
-                        try:
-                            raw_resp = dict(p.function_response.response)
-                            if "result" in raw_resp:
-                                agent_action = json.loads(raw_resp["result"])
-                        except Exception as e:
-                            print(f"Error parsing function response: {e}")
+        for part in response.parts:
+            if part.function_call:
+                tool_name = part.function_call.name
+                args = dict(part.function_call.args)
+                
+                # Dynamically call the corresponding Python function in this module
+                func = globals().get(tool_name)
+                if func:
+                    raw_json_str = func(**args)
+                    agent_action = json.loads(raw_json_str)
+                    break
 
         # Fallback if we can't extract the structured tool response
         if not agent_action:
