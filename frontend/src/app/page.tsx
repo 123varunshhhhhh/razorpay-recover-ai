@@ -59,6 +59,22 @@ export default function Dashboard() {
     setIsSimulating(false);
   }
 
+  const triggerReset = async () => {
+    setIsSimulating(true);
+    try {
+      await fetch("http://127.0.0.1:8000/api/sandbox/reset_db", {
+        method: "POST"
+      });
+      // Clear local state immediately for snappy UI
+      setLogs([]);
+      setMetrics({ at_risk_amount: 0, recovered_amount: 0, recovery_percentage: 0 });
+      setReceivables([]);
+    } catch (e) {
+      console.error("Reset failed", e);
+    }
+    setIsSimulating(false);
+  }
+
   return (
     <main className="p-8 max-w-7xl mx-auto">
       {/* Header */}
@@ -118,6 +134,12 @@ export default function Dashboard() {
                 <span className="block font-medium text-orange-300">Simulate Compliance Violation</span>
                 <span className="text-xs text-slate-400">Expects: Escalation on 3+ strikes</span>
               </button>
+
+              <div className="pt-4 mt-4 border-t border-white/10">
+                <button onClick={triggerReset} disabled={isSimulating} className="w-full text-center px-4 py-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 font-medium transition-colors">
+                  {isSimulating ? "Resetting..." : "Reset Database (Demo Prep)"}
+                </button>
+              </div>
             </div>
             {isSimulating && <p className="text-sm text-indigo-400 mt-4 animate-pulse">Agent is thinking...</p>}
           </div>
@@ -169,7 +191,7 @@ export default function Dashboard() {
                 <div className="flex justify-between items-start mb-3">
                   <div>
                     <span className="inline-block px-2 py-1 rounded bg-white/10 text-white/80 text-xs font-mono mr-3 uppercase">{log.action}</span>
-                    <span className="font-mono text-emerald-400">₹{(log.amount / 100).toLocaleString()}</span>
+                    <span className="font-mono text-emerald-400">₹{(log.recovered_amount / 100).toLocaleString()}</span>
                   </div>
                   <div className="text-right">
                     <span className="text-xs font-mono text-slate-500 bg-black/30 px-2 py-1 rounded">
