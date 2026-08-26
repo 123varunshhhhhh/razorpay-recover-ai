@@ -6,8 +6,8 @@ def get_customer_by_email(db: Session, email: str) -> Customer:
     return db.query(Customer).filter(Customer.email == email).first()
 
 def get_recent_recovery_events(db: Session, limit: int = 20):
-    """Fetch the most recent AI recovery interventions."""
-    return db.query(RecoveryEvent).order_by(RecoveryEvent.created_at.desc()).limit(limit).all()
+    """Fetch the most recent AI recovery interventions, newest first."""
+    return db.query(RecoveryEvent).order_by(RecoveryEvent.id.desc()).limit(limit).all()
 
 def check_event_processed(db: Session, razorpay_event_id: str) -> bool:
     """Check if we have already processed this webhook event (Idempotency Check)"""

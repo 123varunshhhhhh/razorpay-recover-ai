@@ -73,6 +73,7 @@ This is wasteful. A ₹25,000 VIP customer who fails once deserves a completely 
 ### ⚡ Real-Time Webhook Processing
 - Processes **Razorpay payment failure webhooks** in under 2 seconds average
 - Built-in **idempotency protection** — duplicate webhook deliveries from Razorpay are silently deduplicated
+- **Closed-loop recovery**: when the customer pays via the AI-sent link, Razorpay fires a `payment.captured` webhook and the dashboard immediately flips the event from *at-risk* to *recovered* — no manual refresh needed
 - Structured **SQLite audit log** for every intervention
 
 ### 💰 Financially Honest Metrics
@@ -220,7 +221,7 @@ for part in response.parts:
         break
 ```
 
-This cuts latency **in half** — from ~3-4s down to ~1-2s per call.
+This cuts latency **in half**. Observed typical range is **1.5–3s** per call under normal conditions, with occasional variance on the free-tier Gemini API (rate-limit backoff can spike to 5–7s on burst runs).
 
 ---
 
@@ -372,11 +373,13 @@ All endpoints run at `http://127.0.0.1:8000`. Visit `/docs` for interactive Swag
 
 ```json
 {
-  "at_risk_amount": 3700000,
+  "at_risk_amount": 4010000,
   "recovered_amount": 2300000,
-  "recovery_percentage": 62.2
+  "recovery_percentage": 57.4
 }
 ```
+
+> **Note:** Values reflect a representative post-batch-run state. At-risk is the sum of all failed event amounts; recovered is the net cash collected after any AI-applied discounts.
 
 > All monetary values are in **paise** (1 INR = 100 paise). Divide by 100 to get INR.
 
