@@ -32,9 +32,23 @@ def read_root():
 
 @app.get("/api/logs")
 def get_logs(db: Session = Depends(get_db)):
-    """Returns the recent recovery actions taken by the AI."""
+    """Returns the recent recovery actions taken by the AI, with customer context."""
     events = crud.get_recent_recovery_events(db, limit=20)
-    return {"logs": [{"id": e.id, "amount": e.amount, "recovered_amount": e.recovered_amount, "action": e.agent_action, "reasoning": e.agent_reasoning, "status": e.status, "latency_ms": e.latency_ms, "cost_usd": e.cost_usd} for e in events]}
+    return {"logs": [{
+        "id": e.id,
+        "amount": e.amount,
+        "recovered_amount": e.recovered_amount,
+        "action": e.agent_action,
+        "reasoning": e.agent_reasoning,
+        "status": e.status,
+        "latency_ms": e.latency_ms,
+        "cost_usd": e.cost_usd,
+        "failure_reason": e.failure_reason,
+        # Customer context — the inputs that drove the AI's decision
+        "customer_ltv": e.customer.lifetime_value if e.customer else 0,
+        "customer_failed_attempts": e.customer.failed_attempts_count if e.customer else 0,
+        "customer_fraud_flag": e.customer.fraud_flag if e.customer else False,
+    } for e in events]}
 
 @app.get("/api/receivables")
 def get_receivables(db: Session = Depends(get_db)):
@@ -83,6 +97,32 @@ async def simulate_sandbox_webhook(request: SandboxSimulationRequest, db: Sessio
     await process_webhook_event(mock_payload, mock_event_id, db)
     
     return {"status": "simulated", "scenario": request.scenario}
+
+@app.post("/api/sandbox/simulate_success")
+async def simulate_sandbox_success(email: str = "new@user.com", db: Session = Depends(get_db)):
+    """
+    Frontend trigger for live demonstration of a successful recovery.
+    Mocks a Razorpay payment_link.paid webhook.
+    """
+    mock_event_id = f"evt_sandbox_{uuid.uuid4().hex[:8]}"
+    mock_payload = {
+        "event": "payment_link.paid",
+        "payload": {
+            "payment_link": {
+                "entity": {
+                    "customer": {
+                        "email": email
+                    }
+                }
+            }
+        }
+    }
+    
+    # Call the webhook logic directly bypassing signature checks
+    await process_webhook_event(mock_payload, mock_event_id, db)
+    
+    return {"status": "recovery_simulated", "email": email}
+
 
 @app.post("/api/sandbox/reset_db")
 async def reset_database():

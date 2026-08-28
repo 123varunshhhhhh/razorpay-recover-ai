@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 
 export default function Dashboard() {
   const [isSimulating, setIsSimulating] = useState(false);
-  const [metrics, setMetrics] = useState({ at_risk_amount: 0, recovered_amount: 0, recovery_percentage: 0 });
+  const [metrics, setMetrics] = useState<any>({ at_risk_amount: 0, recovered_amount: 0, recovery_percentage: 0, ai_roi: 0, total_cost_usd: 0, total_events: 0, escalations: 0, discounts: 0, upi_retries: 0 });
   const [logs, setLogs] = useState<any[]>([]);
   const [receivables, setReceivables] = useState<any[]>([]);
 
@@ -147,6 +147,26 @@ export default function Dashboard() {
                   boxShadow: '0 0 12px rgba(16,185,129,0.5)',
                 }} />
               </div>
+            </div>
+
+            <div style={{ width: '1px', height: '48px', background: 'rgba(255,255,255,0.08)' }} />
+
+            {/* AI ROI Metric — the killer differentiator */}
+            <div style={{ textAlign: 'right' }}>
+              <p style={{ fontSize: '0.65rem', color: 'rgba(148,163,184,0.7)', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 4px 0', fontWeight: '600' }}>
+                AI ROI
+              </p>
+              <p style={{
+                fontSize: '1.9rem', fontWeight: '800', margin: 0,
+                background: 'linear-gradient(135deg, #f59e0b, #fbbf24)',
+                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+                fontFamily: "'JetBrains Mono', monospace", letterSpacing: '-0.02em',
+              }}>
+                {metrics.ai_roi > 0 ? `${metrics.ai_roi.toLocaleString()}x` : '—'}
+              </p>
+              <p style={{ fontSize: '0.58rem', color: 'rgba(148,163,184,0.45)', margin: '2px 0 0 0', letterSpacing: '0.04em' }}>
+                ₹ recovered / ₹ AI cost
+              </p>
             </div>
           </div>
         </div>
@@ -406,6 +426,48 @@ export default function Dashboard() {
                       {log.reasoning}
                     </p>
                   </div>
+
+                  {/* Customer context chips — inputs that drove the AI decision */}
+                  {(log.customer_ltv !== undefined) && (
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginLeft: '0.4rem', marginTop: '0.6rem' }}>
+                      <span style={{
+                        fontSize: '0.62rem', padding: '2px 8px', borderRadius: '6px', fontWeight: '600',
+                        background: log.customer_ltv > 1000000 ? 'rgba(16,185,129,0.12)' : 'rgba(100,116,139,0.12)',
+                        color: log.customer_ltv > 1000000 ? '#34d399' : 'rgba(148,163,184,0.6)',
+                        border: `1px solid ${log.customer_ltv > 1000000 ? 'rgba(16,185,129,0.2)' : 'rgba(255,255,255,0.05)'}`,
+                        fontFamily: "'JetBrains Mono', monospace",
+                      }}>
+                        LTV ₹{(log.customer_ltv / 100).toLocaleString()}
+                      </span>
+                      <span style={{
+                        fontSize: '0.62rem', padding: '2px 8px', borderRadius: '6px', fontWeight: '600',
+                        background: log.customer_failed_attempts >= 3 ? 'rgba(244,63,94,0.12)' : 'rgba(100,116,139,0.12)',
+                        color: log.customer_failed_attempts >= 3 ? '#fb7185' : 'rgba(148,163,184,0.6)',
+                        border: `1px solid ${log.customer_failed_attempts >= 3 ? 'rgba(244,63,94,0.2)' : 'rgba(255,255,255,0.05)'}`,
+                        fontFamily: "'JetBrains Mono', monospace",
+                      }}>
+                        {log.customer_failed_attempts} prior failure{log.customer_failed_attempts !== 1 ? 's' : ''}
+                      </span>
+                      {log.customer_fraud_flag && (
+                        <span style={{
+                          fontSize: '0.62rem', padding: '2px 8px', borderRadius: '6px', fontWeight: '700',
+                          background: 'rgba(245,158,11,0.15)', color: '#f59e0b',
+                          border: '1px solid rgba(245,158,11,0.25)',
+                        }}>
+                          ⚠ Fraud Flag
+                        </span>
+                      )}
+                      {log.failure_reason && (
+                        <span style={{
+                          fontSize: '0.62rem', padding: '2px 8px', borderRadius: '6px', fontWeight: '500',
+                          background: 'rgba(255,255,255,0.04)', color: 'rgba(148,163,184,0.5)',
+                          border: '1px solid rgba(255,255,255,0.05)',
+                        }}>
+                          {log.failure_reason}
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}

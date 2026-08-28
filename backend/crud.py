@@ -59,7 +59,7 @@ def log_promise_to_pay(db: Session, customer_id: int, promise_date) -> bool:
     return False
 
 def get_metrics(db: Session):
-    """Calculates batch metrics for the UI."""
+    """Calculates batch metrics for the UI, including AI ROI."""
     from sqlalchemy import func
     from models import Receivable
     
@@ -74,10 +74,30 @@ def get_metrics(db: Session):
     total_at_risk = at_risk + at_risk_rec + promised_rec
     total_recovered = recovered_events + promised_rec
     
+    # AI cost and ROI calculation
+    total_cost_usd = db.query(func.sum(RecoveryEvent.cost_usd)).scalar() or 0.0
+    USD_TO_INR = 84
+    total_cost_inr_paise = int(total_cost_usd * USD_TO_INR * 100)  # Convert to paise
+    # ROI: rupees recovered per rupee of AI spend
+    ai_roi = round(total_recovered / total_cost_inr_paise, 1) if total_cost_inr_paise > 0 else 0
+
+    # Decision breakdown
+    total_events = db.query(func.count(RecoveryEvent.id)).scalar() or 0
+    escalations = db.query(func.count(RecoveryEvent.id)).filter(RecoveryEvent.agent_action == "flag_for_escalation").scalar() or 0
+    discounts = db.query(func.count(RecoveryEvent.id)).filter(RecoveryEvent.agent_action == "send_discount_link").scalar() or 0
+    upi_retries = db.query(func.count(RecoveryEvent.id)).filter(RecoveryEvent.agent_action == "send_upi_link").scalar() or 0
+    
     return {
         "at_risk_amount": total_at_risk,
         "recovered_amount": total_recovered,
-        "recovery_percentage": round((total_recovered / total_at_risk * 100), 1) if total_at_risk > 0 else 0
+        "recovery_percentage": round((total_recovered / total_at_risk * 100), 1) if total_at_risk > 0 else 0,
+        "total_cost_usd": round(total_cost_usd, 6),
+        "total_cost_inr_paise": total_cost_inr_paise,
+        "ai_roi": ai_roi,  # Paise recovered per paise of AI cost
+        "total_events": total_events,
+        "escalations": escalations,
+        "discounts": discounts,
+        "upi_retries": upi_retries,
     }
 
 def get_active_receivables(db: Session, limit: int = 5):
