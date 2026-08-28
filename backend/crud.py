@@ -17,7 +17,7 @@ def check_event_processed(db: Session, razorpay_event_id: str) -> bool:
 
 def create_recovery_event(db: Session, customer_id: int, razorpay_event_id: str, amount: int, recovered_amount: int, currency: str, 
                           failure_reason: str, agent_action: str, agent_reasoning: str, status: str,
-                          latency_ms: int = 0, cost_usd: float = 0.0) -> RecoveryEvent:
+                          latency_ms: int = 0, cost_usd: float = 0.0, payment_link_url: str = None) -> RecoveryEvent:
     """Log a new intervention attempted by the AI agent."""
     db_event = RecoveryEvent(
         customer_id=customer_id,
@@ -28,6 +28,7 @@ def create_recovery_event(db: Session, customer_id: int, razorpay_event_id: str,
         failure_reason=failure_reason,
         agent_action=agent_action,
         agent_reasoning=agent_reasoning,
+        payment_link_url=payment_link_url,
         status=status,
         latency_ms=latency_ms,
         cost_usd=cost_usd

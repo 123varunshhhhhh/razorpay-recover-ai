@@ -47,6 +47,7 @@ class RecoveryEvent(Base):
     # The action the AI agent decided to take
     agent_action = Column(String, nullable=True)
     agent_reasoning = Column(String, nullable=True)
+    payment_link_url = Column(String, nullable=True)  # Real Razorpay payment link created by the agent
     
     # Track the outcome of our intervention
     status = Column(String, default="pending_analysis") # pending_analysis, intervention_sent, recovered, failed

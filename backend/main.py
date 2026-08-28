@@ -48,6 +48,8 @@ def get_logs(db: Session = Depends(get_db)):
         "customer_ltv": e.customer.lifetime_value if e.customer else 0,
         "customer_failed_attempts": e.customer.failed_attempts_count if e.customer else 0,
         "customer_fraud_flag": e.customer.fraud_flag if e.customer else False,
+        # Real payment link created by the agent
+        "payment_link_url": e.payment_link_url,
     } for e in events]}
 
 @app.get("/api/receivables")
@@ -262,7 +264,30 @@ async def process_webhook_event(payload_json: dict, event_id: str, db: Session):
         elif action_type == "send_discount_link" and "discounted_amount_paise" in action_data:
             recovered_amount = action_data.get("discounted_amount_paise")
 
-        # 5. Persist to DB using CRUD layer
+        # 5. Create a REAL Razorpay Payment Link (the true closed loop)
+        payment_link_url = None
+        if action_type in ("send_upi_link", "send_discount_link") and customer:
+            try:
+                link_amount = recovered_amount if action_type == "send_discount_link" else original_amount
+                description = (
+                    f"Recovery link for failed payment" +
+                    (f" ({action_data.get('discount_percentage', 10)}% discount applied)" if action_type == "send_discount_link" else "")
+                )
+                link_response = razorpay_utils.create_payment_link(
+                    amount_in_paise=link_amount,
+                    description=description,
+                    customer_info={
+                        "email": customer_email,
+                        "contact": customer.contact or "9999999999",
+                    }
+                )
+                payment_link_url = link_response.get("short_url") or link_response.get("id")
+                print(f"✅ Real Razorpay link created: {payment_link_url}")
+            except Exception as e:
+                print(f"⚠️ Razorpay link creation failed (non-blocking): {e}")
+                payment_link_url = None
+
+        # 6. Persist to DB using CRUD layer
         crud.create_recovery_event(
             db=db,
             customer_id=customer.id if customer else None,
@@ -275,6 +300,7 @@ async def process_webhook_event(payload_json: dict, event_id: str, db: Session):
             agent_reasoning=reasoning,
             status="success" if action_type != "unknown" else "failed",
             latency_ms=latency_ms,
-            cost_usd=cost_usd
+            cost_usd=cost_usd,
+            payment_link_url=payment_link_url,
         )
 

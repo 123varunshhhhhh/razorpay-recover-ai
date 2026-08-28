@@ -335,9 +335,31 @@ export default function Dashboard() {
                 border: '1px solid rgba(16,185,129,0.3)', letterSpacing: '0.08em', textTransform: 'uppercase',
               }}>● Live</span>
             </div>
-            <span style={{ fontSize: '0.72rem', color: 'rgba(100,116,139,0.6)' }}>
-              {logs.length} event{logs.length !== 1 ? 's' : ''} recorded
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              {/* Decision breakdown */}
+              {logs.length > 0 && (
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  {metrics.discounts > 0 && (
+                    <span style={{ fontSize: '0.65rem', padding: '2px 8px', borderRadius: '6px', background: 'rgba(16,185,129,0.12)', color: '#34d399', border: '1px solid rgba(16,185,129,0.2)', fontWeight: '600' }}>
+                      {metrics.discounts} discount{metrics.discounts !== 1 ? 's' : ''}
+                    </span>
+                  )}
+                  {metrics.upi_retries > 0 && (
+                    <span style={{ fontSize: '0.65rem', padding: '2px 8px', borderRadius: '6px', background: 'rgba(59,130,246,0.12)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.2)', fontWeight: '600' }}>
+                      {metrics.upi_retries} UPI
+                    </span>
+                  )}
+                  {metrics.escalations > 0 && (
+                    <span style={{ fontSize: '0.65rem', padding: '2px 8px', borderRadius: '6px', background: 'rgba(244,63,94,0.12)', color: '#fb7185', border: '1px solid rgba(244,63,94,0.2)', fontWeight: '600' }}>
+                      {metrics.escalations} escalated
+                    </span>
+                  )}
+                </div>
+              )}
+              <span style={{ fontSize: '0.72rem', color: 'rgba(100,116,139,0.6)' }}>
+                {logs.length} event{logs.length !== 1 ? 's' : ''} recorded
+              </span>
+            </div>
           </div>
 
           {/* Empty state */}
@@ -468,6 +490,27 @@ export default function Dashboard() {
                       )}
                     </div>
                   )}
+                  {/* Real Razorpay payment link — the true closed loop */}
+                  {log.payment_link_url && (
+                    <a
+                      href={log.payment_link_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '6px',
+                        marginLeft: '0.4rem', marginTop: '0.6rem',
+                        padding: '6px 14px', borderRadius: '8px', fontSize: '0.72rem',
+                        fontWeight: '700', textDecoration: 'none',
+                        background: 'linear-gradient(135deg, rgba(16,185,129,0.2), rgba(59,130,246,0.15))',
+                        color: '#34d399',
+                        border: '1px solid rgba(16,185,129,0.35)',
+                        letterSpacing: '0.02em',
+                        transition: 'all 0.2s ease',
+                      }}
+                    >
+                      🔗 Open Razorpay Payment Link
+                    </a>
+                  )}
                 </div>
               );
             })}
@@ -477,4 +520,3 @@ export default function Dashboard() {
     </main>
   );
 }
-
