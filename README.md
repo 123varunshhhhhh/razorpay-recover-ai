@@ -484,6 +484,17 @@ This means the recovery percentage can never be inflated by counting pre-discoun
 
 ---
 
+## 📈 Path to Production
+
+While this repository is optimized for quick local evaluation, deploying Recover AI to Razorpay's production environment requires the following architectural upgrades:
+
+1. **Decoupled Queueing**: Move webhook ingestion from synchronous FastAPI to an asynchronous **Kafka or Redis/Celery** queue to handle burst traffic during flash sales without blocking Razorpay's webhook delivery.
+2. **Database Migration**: Swap SQLite for **PostgreSQL** with `asyncpg` to handle high-concurrency read/writes without locking.
+3. **LLM Fault Tolerance**: Implement **Exponential Backoff** and a Dead-Letter Queue. If the Gemini API rate limits or fails, the system must deterministically default to a safe `send_upi_link` fallback.
+4. **Zero-Trust Security**: Add strict cryptographic signature verification on the webhook endpoint and JWT auth for the dashboard API.
+
+---
+
 <div align="center">
 
 **Built for the Razorpay Buildathon 2026**
