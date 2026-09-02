@@ -278,7 +278,7 @@ async def process_webhook_event(payload_json: dict, event_id: str, db: Session):
                     description=description,
                     customer_info={
                         "email": customer_email,
-                        "contact": customer.contact or "9999999999",
+                        "contact": customer.contact or "9876543210",
                     }
                 )
                 payment_link_url = link_response.get("short_url") or link_response.get("id")
