@@ -151,20 +151,43 @@ def analyze_and_recover(payment_data: dict, customer_ltv: int, previous_failures
     Analyze and execute the best recovery tool.
     """
 
-    try:
-        # Single-hop inference: manually parse the function_call instead of
-        # using automatic_function_calling, which would add a second round-trip.
-        response = _client.models.generate_content(
-            model=MODEL_NAME,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_INSTRUCTION,
-                tools=tools,
-                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
-            ),
-        )
-
-        latency_ms = int((time.time() - start_time) * 1000)
+    # Exponential backoff retry loop for 429 (Resource Exhausted) and 503 (Service Unavailable)
+    max_retries = 3
+    retry_delay = 2.0
+    
+    for attempt in range(max_retries):
+        try:
+            # Single-hop inference: manually parse the function_call instead of
+            # using automatic_function_calling, which would add a second round-trip.
+            response = _client.models.generate_content(
+                model=MODEL_NAME,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_INSTRUCTION,
+                    tools=tools,
+                    automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+                ),
+            )
+            
+            latency_ms = int((time.time() - start_time) * 1000)
+            break # Success, exit retry loop
+            
+        except Exception as e:
+            error_str = str(e)
+            if "429" in error_str or "503" in error_str or "RESOURCE_EXHAUSTED" in error_str:
+                if attempt < max_retries - 1:
+                    import random
+                    jitter = random.uniform(0.1, 1.5)
+                    total_delay = retry_delay + jitter
+                    print(f"API rate limited (429/503). Retrying in {total_delay:.1f}s... (Attempt {attempt+1}/{max_retries})")
+                    time.sleep(total_delay)
+                    retry_delay *= 2
+                    continue
+            # If it's not a rate limit error, or we ran out of retries, return the error
+            return {
+                "status": "error",
+                "error_message": f"AI Error: {error_str}"
+            }
         
         agent_action = None
         candidate = response.candidates[0] if response.candidates else None
@@ -207,9 +230,4 @@ def analyze_and_recover(payment_data: dict, customer_ltv: int, previous_failures
                 "latency_ms": latency_ms,
                 "estimated_cost_usd": estimated_cost_usd
             }
-        }
-    except Exception as e:
-        return {
-            "status": "error",
-            "error_message": str(e)
         }
