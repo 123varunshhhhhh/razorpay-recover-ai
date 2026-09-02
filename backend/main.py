@@ -2,7 +2,7 @@ import os
 import json
 import uuid
 import asyncio
-from fastapi import FastAPI, Request, HTTPException, Header, Depends
+from fastapi import FastAPI, Request, HTTPException, Header, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from dotenv import load_dotenv
@@ -136,11 +136,11 @@ async def reset_database():
     return {"status": "reset_complete"}
 
 @app.post("/api/sandbox/batch_simulate")
-async def simulate_batch():
+async def simulate_batch(background_tasks: BackgroundTasks):
     """
-    Simulates a deterministic batch of failed payments in PARALLEL.
-    Each event gets its own DB session and fires simultaneously via asyncio.gather,
-    reducing wall-clock time from 4×latency to ~1×latency.
+    Simulates a deterministic batch of failed payments in the BACKGROUND.
+    Returns immediately, while events process in parallel via background tasks.
+    Frontend polling will pick up results as they finish.
     """
     import asyncio
     from database import SessionLocal
@@ -175,9 +175,13 @@ async def simulate_batch():
         finally:
             db.close()
 
-    # Fire all 4 events simultaneously — total time ≈ slowest single event, not sum of all
-    await asyncio.gather(*[run_one(s) for s in batch_scenarios])
-    return {"status": "batch_completed"}
+    # Background process wrapper to run all events concurrently
+    async def process_all_scenarios():
+        await asyncio.gather(*[run_one(s) for s in batch_scenarios])
+        
+    # Schedule the batch to run in the background and return immediately to the client
+    background_tasks.add_task(process_all_scenarios)
+    return {"status": "batch_started"}
 
 @app.post("/api/webhook")
 async def razorpay_webhook(
