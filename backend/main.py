@@ -136,37 +136,47 @@ async def reset_database():
     return {"status": "reset_complete"}
 
 @app.post("/api/sandbox/batch_simulate")
-async def simulate_batch(db: Session = Depends(get_db)):
-    """Simulates a deterministic batch of failed payments to guarantee a varied demo trace."""
-    
-    # 4 curated events targeting the isolated batch customers
+async def simulate_batch():
+    """
+    Simulates a deterministic batch of failed payments in PARALLEL.
+    Each event gets its own DB session and fires simultaneously via asyncio.gather,
+    reducing wall-clock time from 4×latency to ~1×latency.
+    """
+    import asyncio
+    from database import SessionLocal
+
     batch_scenarios = [
-        {"email": "batch_1_vip@corp.com", "amount": 2500000, "reason": "Insufficient funds"},
-        {"email": "batch_2_standard@user.com", "amount": 50000, "reason": "Bank declined"},
-        {"email": "batch_3_fraud@sus.com", "amount": 10000, "reason": "Fraud risk suspected by issuer"},
-        {"email": "batch_4_repeat@spam.com", "amount": 50000, "reason": "Insufficient funds"}
+        {"email": "batch_1_vip@corp.com",      "amount": 2500000, "reason": "Insufficient funds"},
+        {"email": "batch_2_standard@user.com", "amount": 50000,   "reason": "Bank declined"},
+        {"email": "batch_3_fraud@sus.com",     "amount": 10000,   "reason": "Fraud risk suspected by issuer"},
+        {"email": "batch_4_repeat@spam.com",   "amount": 50000,   "reason": "Insufficient funds"},
     ]
-    
-    for scenario in batch_scenarios:
-        mock_event_id = f"evt_batch_{uuid.uuid4().hex[:8]}"
-        mock_payload = {
-            "event": "payment.failed",
-            "payload": {
-                "payment": {
-                    "entity": {
-                        "id": f"pay_{uuid.uuid4().hex[:8]}",
-                        "amount": scenario["amount"],
-                        "currency": "INR",
-                        "email": scenario["email"],
-                        "contact": "9999999999",
-                        "error_description": scenario["reason"],
+
+    async def run_one(scenario: dict):
+        db = SessionLocal()   # Each coroutine owns its session — safe for concurrent use
+        try:
+            mock_event_id = f"evt_batch_{uuid.uuid4().hex[:8]}"
+            mock_payload = {
+                "event": "payment.failed",
+                "payload": {
+                    "payment": {
+                        "entity": {
+                            "id": f"pay_{uuid.uuid4().hex[:8]}",
+                            "amount": scenario["amount"],
+                            "currency": "INR",
+                            "email": scenario["email"],
+                            "contact": "9876543210",
+                            "error_description": scenario["reason"],
+                        }
                     }
                 }
             }
-        }
-        
-        await process_webhook_event(mock_payload, mock_event_id, db)
-        
+            await process_webhook_event(mock_payload, mock_event_id, db)
+        finally:
+            db.close()
+
+    # Fire all 4 events simultaneously — total time ≈ slowest single event, not sum of all
+    await asyncio.gather(*[run_one(s) for s in batch_scenarios])
     return {"status": "batch_completed"}
 
 @app.post("/api/webhook")
@@ -231,8 +241,11 @@ async def process_webhook_event(payload_json: dict, event_id: str, db: Session):
 
         previous_failures = 0
 
-        # 3. Trigger the AI Agent
-        ai_response = agent.analyze_and_recover(payment_data, customer_ltv, previous_failures, failed_attempts_count)
+        # 3. Trigger the AI Agent (run in thread — Gemini HTTP call is blocking)
+        import asyncio
+        ai_response = await asyncio.to_thread(
+            agent.analyze_and_recover, payment_data, customer_ltv, previous_failures, failed_attempts_count
+        )
         
         # 4. Parse Action & Reasoning
         action_type = "unknown"
@@ -279,13 +292,13 @@ async def process_webhook_event(payload_json: dict, event_id: str, db: Session):
                     f"Recovery link for failed payment" +
                     (f" ({action_data.get('discount_percentage', 10)}% discount applied)" if action_type == "send_discount_link" else "")
                 )
-                link_response = razorpay_utils.create_payment_link(
-                    amount_in_paise=link_amount,
-                    description=description,
-                    customer_info={
-                        "email": customer_email,
-                        "contact": customer.contact or "9876543210",
-                    }
+                import asyncio
+                link_response = await asyncio.to_thread(
+                    lambda: razorpay_utils.create_payment_link(
+                        amount_in_paise=link_amount,
+                        description=description,
+                        customer_info={"email": customer_email, "contact": customer.contact or "9876543210"},
+                    )
                 )
                 payment_link_url = link_response.get("short_url") or link_response.get("id")
                 print(f"✅ Real Razorpay link created: {payment_link_url}")
