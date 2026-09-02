@@ -256,6 +256,71 @@ export default function Dashboard() {
             ))}
           </motion.div>
 
+          {/* ── AI Impact vs Industry Baseline ── */}
+          {metrics.at_risk_amount > 0 && (
+            <motion.div variants={fade} style={{borderRadius:14,padding:"1.1rem 1.35rem",background:"rgba(255,255,255,0.03)",border:"1px solid rgba(109,40,217,0.2)"}}>
+              <div style={{fontSize:"0.58rem",textTransform:"uppercase",letterSpacing:"0.13em",color:"rgba(148,163,184,0.33)",fontWeight:800,marginBottom:"0.85rem"}}>💡 AI Impact vs Industry</div>
+
+              {/* WITHOUT AI row */}
+              <div style={{marginBottom:"0.65rem"}}>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:"0.67rem",color:"rgba(148,163,184,0.45)",marginBottom:5,fontWeight:600}}>
+                  <span>Without AI <span style={{opacity:0.5,fontWeight:400}}>(generic retry email)</span></span>
+                  <span style={{color:"#f87171",fontFamily:"'JetBrains Mono',monospace"}}>~15%</span>
+                </div>
+                <div style={{height:6,background:"rgba(255,255,255,0.05)",borderRadius:99,overflow:"hidden"}}>
+                  <motion.div
+                    initial={{width:0}} animate={{width:"15%"}}
+                    transition={{duration:0.9,ease:[0.22,1,0.36,1],delay:0.2}}
+                    style={{height:"100%",background:"linear-gradient(90deg,#ef4444,#f87171)",borderRadius:99}}
+                  />
+                </div>
+                <div style={{fontSize:"0.62rem",color:"rgba(148,163,184,0.3)",marginTop:3,fontFamily:"'JetBrains Mono',monospace"}}>
+                  ₹{Math.round(metrics.at_risk_amount * 0.15 / 100).toLocaleString()} recovered
+                </div>
+              </div>
+
+              {/* WITH AI row */}
+              <div style={{marginBottom:"0.85rem"}}>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:"0.67rem",color:"rgba(148,163,184,0.45)",marginBottom:5,fontWeight:600}}>
+                  <span style={{color:"#a78bfa"}}>With Recover AI</span>
+                  <span style={{color:"#34d399",fontFamily:"'JetBrains Mono',monospace"}}>{metrics.recovery_percentage}%</span>
+                </div>
+                <div style={{height:6,background:"rgba(255,255,255,0.05)",borderRadius:99,overflow:"hidden"}}>
+                  <motion.div
+                    initial={{width:0}} animate={{width:`${Math.min(metrics.recovery_percentage,100)}%`}}
+                    transition={{duration:1.1,ease:[0.22,1,0.36,1],delay:0.3}}
+                    style={{height:"100%",background:"linear-gradient(90deg,#6d28d9,#10b981)",borderRadius:99,boxShadow:"0 0 8px rgba(16,185,129,0.4)"}}
+                  />
+                </div>
+                <div style={{fontSize:"0.62rem",color:"#34d399",marginTop:3,fontFamily:"'JetBrains Mono',monospace"}}>
+                  ₹{Math.round(metrics.recovered_amount / 100).toLocaleString()} recovered
+                </div>
+              </div>
+
+              {/* Delta box */}
+              {metrics.recovery_percentage > 15 && (
+                <motion.div
+                  initial={{opacity:0,scale:0.95}} animate={{opacity:1,scale:1}}
+                  transition={{duration:0.5,delay:0.6}}
+                  style={{borderRadius:9,padding:"0.6rem 0.8rem",background:"linear-gradient(135deg,rgba(16,185,129,0.1),rgba(109,40,217,0.1))",border:"1px solid rgba(16,185,129,0.2)",display:"flex",justifyContent:"space-between",alignItems:"center"}}
+                >
+                  <div>
+                    <div style={{fontSize:"0.58rem",color:"rgba(148,163,184,0.4)",textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:700}}>Extra Revenue Saved</div>
+                    <div style={{fontSize:"1.05rem",fontWeight:800,color:"#34d399",fontFamily:"'JetBrains Mono',monospace",letterSpacing:"-0.02em"}}>
+                      +₹{(Math.round(metrics.recovered_amount/100) - Math.round(metrics.at_risk_amount*0.15/100)).toLocaleString()}
+                    </div>
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <div style={{fontSize:"0.58rem",color:"rgba(148,163,184,0.4)",textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:700}}>vs Baseline</div>
+                    <div style={{fontSize:"1.05rem",fontWeight:800,color:"#a78bfa",fontFamily:"'JetBrains Mono',monospace"}}>
+                      +{(metrics.recovery_percentage - 15).toFixed(0)}pts
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </motion.div>
+          )}
+
           {/* Receivables */}
           {recs.length>0&&(
             <motion.div variants={fade} style={{borderRadius:14,padding:"1.1rem 1.35rem",background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)"}}>
