@@ -441,12 +441,36 @@ export default function Dashboard() {
 
                       {/* Context chips */}
                       {log.customer_ltv!==undefined&&(
-                        <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:log.payment_link_url?"0.75rem":0}}>
+                        <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:"0.75rem"}}>
                           <Chip accent={log.customer_ltv>1000000}>{`LTV ₹${(log.customer_ltv/100).toLocaleString()}`}</Chip>
                           <Chip warn={log.customer_failed_attempts>=3}>{`${log.customer_failed_attempts} failure${log.customer_failed_attempts!==1?"s":""}`}</Chip>
                           {log.customer_fraud_flag&&<span style={{fontSize:"0.61rem",padding:"3px 9px",borderRadius:7,fontWeight:700,background:"rgba(245,158,11,0.12)",color:"#f59e0b",border:"1px solid rgba(245,158,11,0.22)"}}>⚠ Fraud Flag</span>}
                           {log.failure_reason&&<span style={{fontSize:"0.61rem",padding:"3px 9px",borderRadius:7,background:"rgba(255,255,255,0.03)",color:"rgba(148,163,184,0.4)",border:"1px solid rgba(255,255,255,0.04)"}}>{log.failure_reason}</span>}
+                          {log.channel&&<span style={{fontSize:"0.61rem",padding:"3px 9px",borderRadius:7,fontWeight:700,background:log.channel==="whatsapp"?"rgba(37,211,102,0.1)":"rgba(59,130,246,0.1)",color:log.channel==="whatsapp"?"#25d366":"#60a5fa",border:`1px solid ${log.channel==="whatsapp"?"rgba(37,211,102,0.25)":"rgba(59,130,246,0.25)"}`}}>{log.channel==="whatsapp"?"📱 WhatsApp":"📧 Email"}</span>}
                         </div>
+                      )}
+
+                      {/* ── AI-Generated Recovery Message ── */}
+                      {log.recovery_message&&(
+                        <motion.div
+                          initial={{opacity:0,y:6}} animate={{opacity:1,y:0}} transition={{duration:0.35,delay:0.1}}
+                          style={{marginBottom:log.payment_link_url?"0.75rem":0,borderRadius:10,overflow:"hidden",border:"1px solid rgba(255,255,255,0.06)"}}
+                        >
+                          {/* Header */}
+                          <div style={{display:"flex",alignItems:"center",gap:8,padding:"6px 12px",background:"rgba(255,255,255,0.03)",borderBottom:"1px solid rgba(255,255,255,0.05)"}}>
+                            <span style={{fontSize:"0.7rem"}}>{log.channel==="whatsapp"?"📱":"📧"}</span>
+                            <span style={{fontSize:"0.58rem",fontWeight:800,textTransform:"uppercase",letterSpacing:"0.12em",color:"rgba(148,163,184,0.45)"}}>
+                              {log.channel==="whatsapp"?"WhatsApp Recovery Message":"Email Recovery Message"}
+                            </span>
+                            <span style={{marginLeft:"auto",fontSize:"0.55rem",color:"rgba(148,163,184,0.25)",fontStyle:"italic"}}>AI-generated · not sent in demo</span>
+                          </div>
+                          {/* Message body — styled like a chat bubble */}
+                          <div style={{padding:"10px 14px",background:log.channel==="whatsapp"?"rgba(18,45,18,0.7)":"rgba(10,20,45,0.7)"}}>
+                            <p style={{margin:0,fontSize:"0.85rem",color:"#e8f5e9",lineHeight:1.65,fontFamily:"'Inter',sans-serif",fontWeight:400}}>
+                              {log.recovery_message}
+                            </p>
+                          </div>
+                        </motion.div>
                       )}
 
                       {/* Payment link */}

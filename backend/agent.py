@@ -17,31 +17,49 @@ if not GEMINI_API_KEY:
 # AGENT TOOLS (Multi-Strategy Decision Tree)
 # ---------------------------------------------------------------------------
 
-def send_upi_link(reasoning: str, customer_email: str, amount_in_paise: int) -> str:
+def send_upi_link(reasoning: str, customer_email: str, amount_in_paise: int,
+                  customer_message: str = "", channel: str = "whatsapp") -> str:
     """
-    Sends a standard UPI payment link to the customer. 
+    Sends a standard UPI payment link to the customer.
     Use this for insufficient funds or generic failures where the customer just needs to retry.
+    Args:
+        reasoning: Your internal monologue explaining the decision.
+        customer_email: The customer's email.
+        amount_in_paise: The payment amount in paise.
+        customer_message: The exact WhatsApp/email message to send to the customer (2-3 warm sentences).
+        channel: Outreach channel — 'whatsapp' for urgency, 'email' for lower priority.
     """
-    # In a real app, this would call razorpay_utils.create_payment_link
     return json.dumps({
         "action": "send_upi_link",
         "reasoning": reasoning,
+        "customer_message": customer_message,
+        "channel": channel,
         "details": f"Sent UPI link for {amount_in_paise/100} INR to {customer_email}"
     })
 
-def send_discount_link(reasoning: str, customer_email: str, amount_in_paise: int, discount_percentage: int) -> str:
+def send_discount_link(reasoning: str, customer_email: str, amount_in_paise: int,
+                       discount_percentage: int, customer_message: str = "", channel: str = "whatsapp") -> str:
     """
-    Sends a payment link with a discount applied.
-    Use this ONLY for High-Value customers (LTV > 10,000 INR) who abandon carts or fail payments.
+    Sends a payment link with a discount applied. Use ONLY for High-Value customers (LTV > 10,000 INR).
     WARNING/GUARDRAIL: Never exceed 10% discount.
+    Args:
+        reasoning: Your internal monologue.
+        customer_email: The customer's email.
+        amount_in_paise: Original payment amount.
+        discount_percentage: Discount to apply (hard cap: 10%).
+        customer_message: The exact WhatsApp/email message to send (2-3 warm, personalized sentences).
+        channel: 'whatsapp' for VIP urgency, 'email' for standard.
     """
     if discount_percentage > 10:
         return json.dumps({"error": "Guardrail violated: Discount cannot exceed 10%."})
-        
+
     discounted_amount = int(amount_in_paise * (1 - (discount_percentage / 100)))
     return json.dumps({
         "action": "send_discount_link",
         "reasoning": reasoning,
+        "customer_message": customer_message,
+        "channel": channel,
+        "discount_percentage": discount_percentage,
         "discounted_amount_paise": discounted_amount,
         "details": f"Sent {discount_percentage}% discount link for {discounted_amount/100} INR to {customer_email}"
     })
@@ -87,22 +105,27 @@ tools = [send_upi_link, send_discount_link, flag_for_escalation, simple_retry, l
 
 MODEL_NAME = "gemini-2.0-flash"
 
-SYSTEM_INSTRUCTION = """You are 'Recover AI', an intelligent financial agent for a merchant.
-Your goal is to maximize revenue recovery while minimizing costs.
+SYSTEM_INSTRUCTION = """You are 'Recover AI', an autonomous financial recovery agent for a Razorpay merchant.
+Your goal: maximize revenue recovery while protecting the merchant from fraud and bad debt.
 
-You will be provided with a payment failure event, including the customer's Lifetime Value (LTV).
-Analyze the event and choose exactly ONE tool to execute the recovery strategy.
+For EVERY action you take:
+1. Provide a concise internal `reasoning` (your private decision logic — punchy, no boilerplate).
+2. Write a `customer_message`: the exact 2–3 sentence WhatsApp/email message the customer will receive.
+   - For discounts: warm, urgent, mention the specific INR amount saved.
+   - For UPI retries: friendly, remove friction, mention it's secure.
+   - Keep it under 40 words. No salutations or sign-offs.
+3. Choose a `channel`: 'whatsapp' for high-urgency (VIP/first-failure), 'email' for low-priority cases.
 
-COMPLIANCE & GUARDRAILS (STRICT):
-- If the customer has 3 or more failed attempts, you MUST use `flag_for_escalation` and stop automated outreach.
+COMPLIANCE GUARDRAILS (NON-NEGOTIABLE):
+- 3+ lifetime failures → MUST use flag_for_escalation. No exceptions.
+- Fraud flag → MUST use flag_for_escalation immediately.
+- Discount cap: 10% hard maximum. Never exceed.
 
-STRATEGY GUIDELINES:
-1. Low LTV + Insufficient Funds -> Use send_upi_link or simple_retry. Do NOT give discounts.
-2. High LTV (> 10000 INR) + Cart Abandonment/Failure -> Use send_discount_link (MAX 10%).
-3. Overdue Receivables / Promise to pay -> Use log_promise_to_pay with the provided ISO date.
-4. Repeated Failures (>= 3) or Suspected Fraud -> Use flag_for_escalation.
-
-You MUST provide your internal monologue in the `reasoning` parameter. Be extremely concise and punchy. Do not use repetitive boilerplate phrases like "Per the strict compliance guardrails...". Just state the logic directly (e.g. "LTV is 50K, customer is VIP. Sending 10% discount to prevent churn." or "3+ strikes reached. Escalating immediately.")
+STRATEGY:
+1. Low LTV + insufficient funds → send_upi_link
+2. High LTV (>10K INR) + first/second failure → send_discount_link (max 10%)
+3. Overdue receivable → log_promise_to_pay
+4. 3+ failures OR fraud → flag_for_escalation
 """
 
 def analyze_and_recover(payment_data: dict, customer_ltv: int, previous_failures: int, failed_attempts_count: int) -> dict:

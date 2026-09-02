@@ -15,9 +15,10 @@ def check_event_processed(db: Session, razorpay_event_id: str) -> bool:
         return False
     return db.query(RecoveryEvent).filter(RecoveryEvent.razorpay_event_id == razorpay_event_id).first() is not None
 
-def create_recovery_event(db: Session, customer_id: int, razorpay_event_id: str, amount: int, recovered_amount: int, currency: str, 
+def create_recovery_event(db: Session, customer_id: int, razorpay_event_id: str, amount: int, recovered_amount: int, currency: str,
                           failure_reason: str, agent_action: str, agent_reasoning: str, status: str,
-                          latency_ms: int = 0, cost_usd: float = 0.0, payment_link_url: str = None) -> RecoveryEvent:
+                          latency_ms: int = 0, cost_usd: float = 0.0, payment_link_url: str = None,
+                          recovery_message: str = None, channel: str = None) -> RecoveryEvent:
     """Log a new intervention attempted by the AI agent."""
     db_event = RecoveryEvent(
         customer_id=customer_id,
@@ -28,6 +29,8 @@ def create_recovery_event(db: Session, customer_id: int, razorpay_event_id: str,
         failure_reason=failure_reason,
         agent_action=agent_action,
         agent_reasoning=agent_reasoning,
+        recovery_message=recovery_message,
+        channel=channel,
         payment_link_url=payment_link_url,
         status=status,
         latency_ms=latency_ms,

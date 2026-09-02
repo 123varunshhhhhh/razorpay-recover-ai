@@ -47,6 +47,8 @@ class RecoveryEvent(Base):
     # The action the AI agent decided to take
     agent_action = Column(String, nullable=True)
     agent_reasoning = Column(String, nullable=True)
+    recovery_message = Column(String, nullable=True)  # AI-generated customer-facing message (WhatsApp/email)
+    channel = Column(String, nullable=True)           # Outreach channel: whatsapp | email | internal
     payment_link_url = Column(String, nullable=True)  # Real Razorpay payment link created by the agent
     
     # Track the outcome of our intervention

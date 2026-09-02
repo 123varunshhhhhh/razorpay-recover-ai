@@ -40,6 +40,8 @@ def get_logs(db: Session = Depends(get_db)):
         "recovered_amount": e.recovered_amount,
         "action": e.agent_action,
         "reasoning": e.agent_reasoning,
+        "recovery_message": e.recovery_message,   # AI-generated customer-facing message
+        "channel": e.channel,                      # whatsapp | email | internal
         "status": e.status,
         "latency_ms": e.latency_ms,
         "cost_usd": e.cost_usd,
@@ -235,10 +237,14 @@ async def process_webhook_event(payload_json: dict, event_id: str, db: Session):
         # 4. Parse Action & Reasoning
         action_type = "unknown"
         reasoning = ""
+        recovery_message = ""
+        channel = None
         if ai_response["status"] == "success":
             action_data = ai_response.get("agent_action", {})
             action_type = action_data.get("action", "unknown")
             reasoning = action_data.get("reasoning", "")
+            recovery_message = action_data.get("customer_message", "")
+            channel = action_data.get("channel", None)
             
             if action_type == "log_promise_to_pay" and customer:
                 # Extract date from details for demo purposes
@@ -298,6 +304,8 @@ async def process_webhook_event(payload_json: dict, event_id: str, db: Session):
             failure_reason=payment_data.get("error_description", ""),
             agent_action=action_type,
             agent_reasoning=reasoning,
+            recovery_message=recovery_message,
+            channel=channel,
             status="success" if action_type != "unknown" else "failed",
             latency_ms=latency_ms,
             cost_usd=cost_usd,
