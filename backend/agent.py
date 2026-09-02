@@ -1,15 +1,15 @@
 import os
 import json
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from dotenv import load_dotenv
 import razorpay_utils
 
 load_dotenv()
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-else:
+_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
+if not GEMINI_API_KEY:
     print("WARNING: GEMINI_API_KEY not set.")
 
 
@@ -82,14 +82,12 @@ def log_promise_to_pay(reasoning: str, customer_email: str, promised_date_iso: s
 tools = [send_upi_link, send_discount_link, flag_for_escalation, simple_retry, log_promise_to_pay]
 
 # ---------------------------------------------------------------------------
-# AGENT INITIALIZATION
+# AGENT CONFIG
 # ---------------------------------------------------------------------------
 
-if GEMINI_API_KEY:
-    model = genai.GenerativeModel(
-        model_name='gemini-3.5-flash-lite',
-        tools=tools,
-        system_instruction="""You are 'Recover AI', an intelligent financial agent for a merchant.
+MODEL_NAME = "gemini-2.0-flash"
+
+SYSTEM_INSTRUCTION = """You are 'Recover AI', an intelligent financial agent for a merchant.
 Your goal is to maximize revenue recovery while minimizing costs.
 
 You will be provided with a payment failure event, including the customer's Lifetime Value (LTV).
@@ -106,18 +104,16 @@ STRATEGY GUIDELINES:
 
 You MUST provide your internal monologue in the `reasoning` parameter. Be extremely concise and punchy. Do not use repetitive boilerplate phrases like "Per the strict compliance guardrails...". Just state the logic directly (e.g. "LTV is 50K, customer is VIP. Sending 10% discount to prevent churn." or "3+ strikes reached. Escalating immediately.")
 """
-    )
-else:
-    model = None
 
 def analyze_and_recover(payment_data: dict, customer_ltv: int, previous_failures: int, failed_attempts_count: int) -> dict:
     """
-    Feeds the payment data + context to the Agent.
+    Feeds the payment data + context to the Gemini Agent.
+    Uses the google-genai SDK with manual function-call parsing (single-hop, no second LLM round-trip).
     """
     import time
     start_time = time.time()
-    
-    if not model:
+
+    if not _client:
         return {"status": "error", "error_message": "AI Agent not initialized. Please add GEMINI_API_KEY to backend/.env"}
 
     prompt = f"""
@@ -128,40 +124,55 @@ def analyze_and_recover(payment_data: dict, customer_ltv: int, previous_failures
     - Customer LTV: {customer_ltv / 100} INR
     - Session Failures Today: {previous_failures}
     - Lifetime Failed Attempts: {failed_attempts_count} (CRITICAL: If >= 3, you MUST escalate)
-    
+
     Analyze and execute the best recovery tool.
     """
-    
+
     try:
-        # We DO NOT use enable_automatic_function_calling=True because that forces the SDK
-        # to execute the function and send the result back to Gemini for a second round-trip.
-        # By manually parsing the first function_call, we cut latency in HALF.
-        response = model.generate_content(prompt)
-        
+        # Single-hop inference: manually parse the function_call instead of
+        # using automatic_function_calling, which would add a second round-trip.
+        response = _client.models.generate_content(
+            model=MODEL_NAME,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_INSTRUCTION,
+                tools=tools,
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
+            ),
+        )
+
         latency_ms = int((time.time() - start_time) * 1000)
         
         agent_action = None
-        for part in response.parts:
-            if part.function_call:
-                tool_name = part.function_call.name
-                args = dict(part.function_call.args)
-                
-                # Dynamically call the corresponding Python function in this module
-                func = globals().get(tool_name)
-                if func:
-                    raw_json_str = func(**args)
-                    agent_action = json.loads(raw_json_str)
-                    break
+        candidate = response.candidates[0] if response.candidates else None
+        if candidate:
+            for part in candidate.content.parts:
+                if part.function_call:
+                    tool_name = part.function_call.name
+                    args = dict(part.function_call.args)
+
+                    # Dynamically call the corresponding Python function in this module
+                    func = globals().get(tool_name)
+                    if func:
+                        raw_json_str = func(**args)
+                        agent_action = json.loads(raw_json_str)
+                        break
 
         # Fallback if we can't extract the structured tool response
         if not agent_action:
-            agent_action = {"action": "unknown", "reasoning": "Failed to extract action from AI", "raw_text": response.text}
+            raw_text = ""
+            try:
+                raw_text = response.text
+            except Exception:
+                pass
+            agent_action = {"action": "unknown", "reasoning": "Failed to extract action from AI", "raw_text": raw_text}
 
         estimated_cost_usd = 0.0004
         try:
-            if hasattr(response, 'usage_metadata'):
-                in_tokens = response.usage_metadata.prompt_token_count
-                out_tokens = response.usage_metadata.candidates_token_count
+            um = response.usage_metadata
+            if um:
+                in_tokens  = um.prompt_token_count or 0
+                out_tokens = um.candidates_token_count or 0
                 estimated_cost_usd = (in_tokens * 0.000000075) + (out_tokens * 0.00000030)
         except Exception:
             pass
