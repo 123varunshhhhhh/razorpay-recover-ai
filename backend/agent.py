@@ -103,7 +103,7 @@ tools = [send_upi_link, send_discount_link, flag_for_escalation, simple_retry, l
 # AGENT CONFIG
 # ---------------------------------------------------------------------------
 
-MODEL_NAME = "gemini-3.6-flash"
+MODEL_NAME = "gemini-1.5-flash"
 
 SYSTEM_INSTRUCTION = """You are 'Recover AI', an autonomous financial recovery agent for a Razorpay merchant.
 Your goal: maximize revenue recovery while protecting the merchant from fraud and bad debt.
