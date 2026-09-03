@@ -47,9 +47,9 @@ const PIPE = [
 ];
 
 /* ── Framer variants ── */
-const fade  = { hidden:{opacity:0,y:16}, show:{opacity:1,y:0,transition:{duration:0.4,ease:[0.22,1,0.36,1]}} };
-const stag  = { hidden:{}, show:{transition:{staggerChildren:0.06}} };
-const card  = { hidden:{opacity:0,y:24,scale:0.98}, show:{opacity:1,y:0,scale:1,transition:{duration:0.45,ease:[0.22,1,0.36,1]}}, exit:{opacity:0,y:-10,transition:{duration:0.18}} };
+const fade: any  = { hidden:{opacity:0,y:16}, show:{opacity:1,y:0,transition:{duration:0.4,ease:[0.22,1,0.36,1]}} };
+const stag: any  = { hidden:{}, show:{transition:{staggerChildren:0.06}} };
+const card: any  = { hidden:{opacity:0,y:24,scale:0.98}, show:{opacity:1,y:0,scale:1,transition:{duration:0.45,ease:[0.22,1,0.36,1]}}, exit:{opacity:0,y:-10,transition:{duration:0.18}} };
 
 export default function Dashboard() {
   const [busy, setBusy] = useState(false);

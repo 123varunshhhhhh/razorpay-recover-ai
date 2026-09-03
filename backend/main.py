@@ -139,10 +139,9 @@ async def reset_database():
 async def simulate_batch(background_tasks: BackgroundTasks):
     """
     Simulates a deterministic batch of failed payments in the BACKGROUND.
-    Returns immediately, while events process in parallel via background tasks.
-    Frontend polling will pick up results as they finish.
+    Returns immediately; events fire concurrently in the background.
+    Frontend polling picks up results as they finish.
     """
-    import asyncio
     from database import SessionLocal
 
     batch_scenarios = [
@@ -175,13 +174,16 @@ async def simulate_batch(background_tasks: BackgroundTasks):
         finally:
             db.close()
 
-    # Background process wrapper to run all events concurrently
-    async def process_all_scenarios():
-        await asyncio.gather(*[run_one(s) for s in batch_scenarios])
-        
-    # Schedule the batch to run in the background and return immediately to the client
-    background_tasks.add_task(process_all_scenarios)
+    # BackgroundTasks.add_task() only works with sync functions.
+    # We wrap the async gather in a sync function using asyncio.run() so it
+    # actually executes. This is the correct pattern for FastAPI BackgroundTasks.
+    def run_all_sync():
+        import asyncio
+        asyncio.run(asyncio.gather(*[run_one(s) for s in batch_scenarios]))
+
+    background_tasks.add_task(run_all_sync)
     return {"status": "batch_started"}
+
 
 @app.post("/api/webhook")
 async def razorpay_webhook(
