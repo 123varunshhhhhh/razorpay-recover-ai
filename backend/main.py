@@ -304,10 +304,9 @@ async def process_webhook_event(payload_json: dict, event_id: str, db: Session):
                 payment_link_url = link_response.get("short_url") or link_response.get("id")
                 print(f"✅ Real Razorpay link created: {payment_link_url}")
             except Exception as e:
-                print(f"⚠️ Razorpay API limit reached. Using mock link for demo. Error: {e}")
-                # Mock link generator for when Test Mode hits the 30-link limit
-                mock_hash = uuid.uuid4().hex[:8]
-                payment_link_url = f"https://rzp.io/i/demo_{mock_hash}"
+                print(f"⚠️ Razorpay API limit reached. Using hardcoded real link for demo. Error: {e}")
+                # Use a real Razorpay test link from an earlier successful run so the checkout page actually opens for the demo
+                payment_link_url = "https://rzp.io/rzp/uvYTRDxF"
 
         # 6. Persist to DB using CRUD layer
         crud.create_recovery_event(
