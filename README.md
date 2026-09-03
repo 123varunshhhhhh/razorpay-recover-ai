@@ -8,7 +8,7 @@
 [![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
-[![Gemini](https://img.shields.io/badge/Gemini-3.6_Flash-4285F4?style=for-the-badge&logo=google&logoColor=white)](https://ai.google.dev)
+[![Gemini](https://img.shields.io/badge/Gemini-1.5_Flash-4285F4?style=for-the-badge&logo=google&logoColor=white)](https://ai.google.dev)
 [![Razorpay](https://img.shields.io/badge/Razorpay-Webhooks-02042B?style=for-the-badge&logo=razorpay&logoColor=white)](https://razorpay.com)
 
 </div>
@@ -68,9 +68,11 @@ By separating the probabilistic LLM layer from a strict deterministic fallback l
 ## ✨ Key Features
 
 ### 🧠 AI-Powered Decision Making
-- Uses **Google Gemini 3.5 Flash Lite** with custom function-calling tools
-- Transparent **"Internal Monologue"** — you can read exactly why the AI made each decision
-- Optimized **single-hop inference** — the AI's first response is intercepted and executed locally, cutting round-trip latency in half vs. the standard SDK pattern
+- **Gemini-1.5-Flash Brain**: Uses the new `google-genai` SDK for low-latency, single-hop agentic reasoning.
+- **AI Copywriting & Channel Selection**: The agent doesn't just decide the action; it writes the exact personalized WhatsApp or Email message the customer will receive based on urgency.
+- **Graceful Fallback Engine**: If the Gemini API hits a rate limit or goes down during high traffic, the backend silently falls back to a deterministic rules engine that mimics the AI's logic, guaranteeing zero downtime.
+- **Parallel Async Batch Simulation**: Sandbox scenarios process instantly using FastAPI `BackgroundTasks` and `asyncio.gather`, dramatically improving demo speed and UI responsiveness.
+- **Deterministic Sandbox**: A built-in sandbox that lets you simulate curated failure scenarios (VIP failures, multi-strike repeat offenders, fraud) with one click to see the AI's varied responses in real-time.
 
 ### ⚡ Real-Time Webhook Processing
 - Processes **Razorpay payment failure webhooks** in under 2 seconds average
