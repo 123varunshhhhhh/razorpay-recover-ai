@@ -136,11 +136,11 @@ async def reset_database():
     return {"status": "reset_complete"}
 
 @app.post("/api/sandbox/batch_simulate")
-async def simulate_batch(background_tasks: BackgroundTasks):
+async def simulate_batch():
     """
-    Simulates a deterministic batch of failed payments in the BACKGROUND.
-    Returns immediately; events fire concurrently in the background.
-    Frontend polling picks up results as they finish.
+    Simulates 4 failed payment scenarios concurrently using asyncio.gather.
+    Runs all 4 in parallel so total time ≈ slowest single call, not the sum.
+    The frontend shows 'Processing...' while this runs, then cards appear all at once.
     """
     from database import SessionLocal
 
@@ -151,8 +151,10 @@ async def simulate_batch(background_tasks: BackgroundTasks):
         {"email": "batch_4_repeat@spam.com",   "amount": 50000,   "reason": "Insufficient funds"},
     ]
 
-    async def run_one(scenario: dict):
-        db = SessionLocal()   # Each coroutine owns its session — safe for concurrent use
+    async def run_one(scenario: dict, delay_seconds: float = 0.0):
+        if delay_seconds > 0:
+            await asyncio.sleep(delay_seconds)  # Stagger calls to avoid rate limiting
+        db = SessionLocal()  # Each coroutine owns its own DB session
         try:
             mock_event_id = f"evt_batch_{uuid.uuid4().hex[:8]}"
             mock_payload = {
@@ -171,19 +173,15 @@ async def simulate_batch(background_tasks: BackgroundTasks):
                 }
             }
             await process_webhook_event(mock_payload, mock_event_id, db)
+        except Exception as e:
+            print(f"❌ Batch scenario failed for {scenario['email']}: {e}")
         finally:
             db.close()
 
-    # BackgroundTasks.add_task() only works with sync functions.
-    # We wrap the async gather in a sync function using asyncio.run() so it
-    # actually executes. This is the correct pattern for FastAPI BackgroundTasks.
-    def run_all_sync():
-        import asyncio
-        asyncio.run(asyncio.gather(*[run_one(s) for s in batch_scenarios]))
-
-    background_tasks.add_task(run_all_sync)
-    return {"status": "batch_started"}
-
+    # Stagger calls 3 seconds apart to avoid Gemini rate limits (15 req/min free tier)
+    # Total wall-clock time: ~15s for 4 events (instead of 4x sequential)
+    await asyncio.gather(*[run_one(s, delay_seconds=i * 3.0) for i, s in enumerate(batch_scenarios)])
+    return {"status": "batch_completed"}
 
 @app.post("/api/webhook")
 async def razorpay_webhook(
