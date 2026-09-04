@@ -14,6 +14,8 @@ import agent
 
 from sqlalchemy.pool import StaticPool
 
+os.environ["RAZORPAY_WEBHOOK_SECRET"] = "dummy_secret_for_tests"
+
 # Create in-memory DB for tests
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
 engine_test = create_engine(
