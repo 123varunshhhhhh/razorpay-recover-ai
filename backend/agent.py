@@ -1,5 +1,7 @@
 import os
 import json
+import time
+import random
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
@@ -103,7 +105,7 @@ tools = [send_upi_link, send_discount_link, flag_for_escalation, simple_retry, l
 # AGENT CONFIG
 # ---------------------------------------------------------------------------
 
-MODEL_NAME = "gemini-1.5-flash"
+MODEL_NAME = "gemini-3.5-flash"
 
 SYSTEM_INSTRUCTION = """You are 'Recover AI', an autonomous financial recovery agent for a Razorpay merchant.
 Your goal: maximize revenue recovery while protecting the merchant from fraud and bad debt.
@@ -132,8 +134,8 @@ def analyze_and_recover(payment_data: dict, customer_ltv: int, previous_failures
     """
     Feeds the payment data + context to the Gemini Agent.
     Uses the google-genai SDK with manual function-call parsing (single-hop, no second LLM round-trip).
+    Retries up to 3 times with exponential backoff on 429/503 errors.
     """
-    import time
     start_time = time.time()
 
     if not _client:
@@ -151,14 +153,14 @@ def analyze_and_recover(payment_data: dict, customer_ltv: int, previous_failures
     Analyze and execute the best recovery tool.
     """
 
-    # Exponential backoff retry loop for 429 (Resource Exhausted) and 503 (Service Unavailable)
-    max_retries = 3
-    retry_delay = 2.0
-    
+    # Exponential backoff retry loop for 429 and 503 errors
+    max_retries = 4
+    retry_delay = 3.0
+    last_error = None
+
     for attempt in range(max_retries):
         try:
-            # Single-hop inference: manually parse the function_call instead of
-            # using automatic_function_calling, which would add a second round-trip.
+            # Single-hop inference — manually parse function_call to avoid a second LLM round-trip
             response = _client.models.generate_content(
                 model=MODEL_NAME,
                 contents=prompt,
@@ -168,99 +170,66 @@ def analyze_and_recover(payment_data: dict, customer_ltv: int, previous_failures
                     automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
                 ),
             )
-            
+
             latency_ms = int((time.time() - start_time) * 1000)
-            break # Success, exit retry loop
-            
-        except Exception as e:
-            error_str = str(e)
-            if "429" in error_str or "503" in error_str or "RESOURCE_EXHAUSTED" in error_str:
-                if attempt < max_retries - 1:
-                    import random
-                    jitter = random.uniform(0.1, 1.5)
-                    total_delay = retry_delay + jitter
-                    print(f"API rate limited (429/503). Retrying in {total_delay:.1f}s... (Attempt {attempt+1}/{max_retries})")
-                    time.sleep(total_delay)
-                    retry_delay *= 2
-                    continue
-            # If we ran out of retries, use a graceful fallback so the demo doesn't break
-            print(f"⚠️ API completely failed ({error_str}). Using graceful fallback.")
-            
-            # Fallback Rules Engine (Mimics AI behavior perfectly for the demo)
-            fallback_action = "unknown"
-            fallback_reason = "Fallback: API quota exceeded. Default action applied."
-            fallback_msg = "Your payment failed. Please try again."
-            fallback_channel = "email"
-            
-            if failed_attempts_count >= 3 or getattr(payment_data, "fraud_flag", False):
-                fallback_action = "flag_for_escalation"
-                fallback_reason = "Fallback: High risk or 3+ failures. Escalating immediately."
-                fallback_channel = "internal"
-            elif customer_ltv > 1000000: # >10K INR
-                fallback_action = "send_discount_link"
-                fallback_reason = "Fallback: VIP customer. Applying 10% discount to secure recovery."
-                fallback_msg = f"Your payment failed. Here's an exclusive 10% discount to complete your purchase."
-                fallback_channel = "whatsapp"
-            else:
-                fallback_action = "send_upi_link"
-                fallback_reason = "Fallback: Standard customer. Sending standard UPI retry link."
-                fallback_msg = "Your payment failed. Please use this secure UPI link to retry."
-                fallback_channel = "whatsapp"
-                
+
+            # Parse the function call from the response
+            agent_action = None
+            candidate = response.candidates[0] if response.candidates else None
+            if candidate:
+                for part in candidate.content.parts:
+                    if part.function_call:
+                        tool_name = part.function_call.name
+                        args = dict(part.function_call.args)
+                        func = globals().get(tool_name)
+                        if func:
+                            raw_json_str = func(**args)
+                            agent_action = json.loads(raw_json_str)
+                            break
+
+            if not agent_action:
+                raw_text = ""
+                try:
+                    raw_text = response.text
+                except Exception:
+                    pass
+                agent_action = {"action": "unknown", "reasoning": f"AI did not call a tool. Raw: {raw_text[:200]}"}
+
+            # Calculate cost
+            estimated_cost_usd = 0.0004
+            try:
+                um = response.usage_metadata
+                if um:
+                    in_tokens = um.prompt_token_count or 0
+                    out_tokens = um.candidates_token_count or 0
+                    estimated_cost_usd = (in_tokens * 0.000000075) + (out_tokens * 0.00000030)
+            except Exception:
+                pass
+
             return {
                 "status": "success",
-                "agent_action": {
-                    "action": fallback_action,
-                    "reasoning": fallback_reason,
-                    "customer_message": fallback_msg,
-                    "channel": fallback_channel,
-                    "discount_percentage": 10 if fallback_action == "send_discount_link" else None
-                },
+                "agent_action": agent_action,
                 "metrics": {
-                    "latency_ms": int((time.time() - start_time) * 1000),
-                    "estimated_cost_usd": 0.0
+                    "latency_ms": latency_ms,
+                    "estimated_cost_usd": estimated_cost_usd
                 }
             }
 
-        agent_action = None
-        candidate = response.candidates[0] if response.candidates else None
-        if candidate:
-            for part in candidate.content.parts:
-                if part.function_call:
-                    tool_name = part.function_call.name
-                    args = dict(part.function_call.args)
+        except Exception as e:
+            last_error = str(e)
+            is_rate_limit = "429" in last_error or "503" in last_error or "RESOURCE_EXHAUSTED" in last_error or "UNAVAILABLE" in last_error
 
-                    # Dynamically call the corresponding Python function in this module
-                    func = globals().get(tool_name)
-                    if func:
-                        raw_json_str = func(**args)
-                        agent_action = json.loads(raw_json_str)
-                        break
-
-        # Fallback if we can't extract the structured tool response
-        if not agent_action:
-            raw_text = ""
-            try:
-                raw_text = response.text
-            except Exception:
-                pass
-            agent_action = {"action": "unknown", "reasoning": "Failed to extract action from AI", "raw_text": raw_text}
-
-        estimated_cost_usd = 0.0004
-        try:
-            um = response.usage_metadata
-            if um:
-                in_tokens  = um.prompt_token_count or 0
-                out_tokens = um.candidates_token_count or 0
-                estimated_cost_usd = (in_tokens * 0.000000075) + (out_tokens * 0.00000030)
-        except Exception:
-            pass
-
-        return {
-            "status": "success",
-            "agent_action": agent_action,
-            "metrics": {
-                "latency_ms": latency_ms,
-                "estimated_cost_usd": estimated_cost_usd
-            }
-        }
+            if is_rate_limit and attempt < max_retries - 1:
+                jitter = random.uniform(0.5, 2.0)
+                total_delay = retry_delay + jitter
+                print(f"⚠️ Gemini rate limited. Retrying in {total_delay:.1f}s... (attempt {attempt + 1}/{max_retries})")
+                time.sleep(total_delay)
+                retry_delay *= 2  # Exponential: 3s → 6s → 12s
+                continue
+            else:
+                # Non-rate-limit error or exhausted retries — return the error
+                print(f"❌ Gemini API failed after {attempt + 1} attempt(s): {last_error}")
+                return {
+                    "status": "error",
+                    "error_message": f"AI Error: {last_error}"
+                }
