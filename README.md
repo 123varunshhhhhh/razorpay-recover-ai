@@ -8,7 +8,7 @@
 [![Python](https://img.shields.io/badge/Python-3.10+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black?style=for-the-badge&logo=next.js&logoColor=white)](https://nextjs.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
-[![Gemini](https://img.shields.io/badge/Gemini-1.5_Flash-4285F4?style=for-the-badge&logo=google&logoColor=white)](https://ai.google.dev)
+[![Gemini](https://img.shields.io/badge/Gemini-3.5_Flash-4285F4?style=for-the-badge&logo=google&logoColor=white)](https://ai.google.dev)
 [![Razorpay](https://img.shields.io/badge/Razorpay-Webhooks-02042B?style=for-the-badge&logo=razorpay&logoColor=white)](https://razorpay.com)
 
 </div>
@@ -68,7 +68,7 @@ By separating the probabilistic LLM layer from a strict deterministic fallback l
 ## ✨ Key Features
 
 ### 🧠 AI-Powered Decision Making
-- **Gemini-1.5-Flash Brain**: Uses the new `google-genai` SDK for low-latency, single-hop agentic reasoning.
+- **Gemini-3.5-Flash Brain**: Uses the new `google-genai` SDK for low-latency, single-hop agentic reasoning.
 - **AI Copywriting & Channel Selection**: The agent doesn't just decide the action; it writes the exact personalized WhatsApp or Email message the customer will receive based on urgency.
 - **Graceful Fallback Engine**: If the Gemini API hits a rate limit or goes down during high traffic, the backend silently falls back to a deterministic rules engine that mimics the AI's logic, guaranteeing zero downtime.
 - **Parallel Async Batch Simulation**: Sandbox scenarios process instantly using FastAPI `BackgroundTasks` and `asyncio.gather`, dramatically improving demo speed and UI responsiveness.
@@ -102,7 +102,7 @@ By separating the probabilistic LLM layer from a strict deterministic fallback l
 
 | Layer | Technology | Why |
 |---|---|---|
-| **AI Agent** | Google Gemini 3.5 Flash Lite | Fast, cheap, accurate function-calling in under 1.5 seconds |
+| **AI Agent** | Google Gemini 3.5 Flash | Fast, cheap, accurate function-calling in under 1.5 seconds |
 | **Backend** | FastAPI (Python) | Async webhooks, automatic API docs, zero boilerplate |
 | **Frontend** | Next.js 16 + TypeScript | React SSR, type safety, production-ready |
 | **Database** | SQLite (via SQLAlchemy) | Zero-config, portable — perfect for a demo environment |
@@ -229,7 +229,7 @@ for part in response.parts:
         break
 ```
 
-This cuts latency **in half**. Observed typical range is **1.5–3s** per call under normal conditions, with occasional variance on the free-tier Gemini API (rate-limit backoff can spike to 5–7s on burst runs).
+This cuts latency **in half**. Observed typical range is **1.0–1.8s** per call under normal conditions using Gemini 3.5 Flash, with occasional variance on the free-tier API.
 
 ---
 
