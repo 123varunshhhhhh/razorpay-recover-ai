@@ -1,61 +1,70 @@
 "use client";
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import Link from "next/link";
 import Head from "next/head";
 
 export default function LoginPage() {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const bgRef = useRef<any>(null);
+
   useEffect(() => {
-    // 1. Create a fresh canvas to avoid WebGL context loss in React Strict Mode
-    const canvasContainer = document.getElementById('canvas-container');
-    if (!canvasContainer) return;
-    
-    // Clear any existing canvas
-    canvasContainer.innerHTML = '';
-    
-    const canvas = document.createElement('canvas');
-    canvas.id = 'webgl-canvas';
-    canvasContainer.appendChild(canvas);
+    let active = true;
 
-    // 2. Dynamically inject the ES module script for the 3D background
-    const script = document.createElement("script");
-    script.type = "module";
-    script.innerHTML = `
-      import Spheres1Background from 'https://cdn.jsdelivr.net/npm/threejs-components@0.0.17/build/backgrounds/spheres1.cdn.min.js'
+    const initSpherePacking = async () => {
+      if (!canvasRef.current) return;
       
-      const bg = Spheres1Background(document.getElementById('webgl-canvas'), {
-        count: 300,
-        minSize: 0.3,
-        maxSize: 1,
-        gravity: 0.5
-      });
-      
-      const gravityBtn = document.getElementById('gravity-btn');
-      if (gravityBtn) {
-        gravityBtn.addEventListener('click', () => {
-          bg.spheres.config.gravity = bg.spheres.config.gravity === 0 ? 1 : 0;
-        });
-      }
-      
-      const colorsBtn = document.getElementById('colors-btn');
-      if (colorsBtn) {
-        colorsBtn.addEventListener('click', () => {
-          bg.spheres.setColors([0xffffff * Math.random(), 0xffffff * Math.random(), 0xffffff * Math.random()]);
-        });
-      }
-    `;
-    document.body.appendChild(script);
+      try {
+        // Dynamically import to avoid Next.js SSR issues with window/three.js
+        // @ts-ignore
+        const module = await import("threejs-components/build/backgrounds/spheres1.min.js");
+        const Spheres1Background = module.default;
+        
+        // Prevent initializing twice in Strict Mode if it already initialized
+        if (!active) return;
 
-    return () => {
-      if (document.body.contains(script)) {
-        document.body.removeChild(script);
-      }
-      const existingCanvas = document.getElementById('webgl-canvas');
-      if (existingCanvas) {
-        // Just remove the canvas entirely, getting rid of the WebGL context safely
-        existingCanvas.remove();
+        const bg = Spheres1Background(canvasRef.current, {
+          count: 300,
+          minSize: 0.3,
+          maxSize: 1,
+          gravity: 0.5
+        });
+        
+        bgRef.current = bg;
+      } catch (err) {
+        console.error("Failed to load threejs-components:", err);
       }
     };
+
+    initSpherePacking();
+
+    return () => {
+      active = false;
+      // If the component unmounts, try to gracefully stop the threejs loop and clear WebGL context
+      if (canvasRef.current) {
+        const gl = canvasRef.current.getContext('webgl2') || canvasRef.current.getContext('webgl');
+        if (gl) {
+          gl.getExtension('WEBGL_lose_context')?.loseContext();
+        }
+      }
+      bgRef.current = null;
+    };
   }, []);
+
+  const toggleGravity = () => {
+    if (bgRef.current) {
+      bgRef.current.spheres.config.gravity = bgRef.current.spheres.config.gravity === 0 ? 1 : 0;
+    }
+  };
+
+  const randomColors = () => {
+    if (bgRef.current) {
+      bgRef.current.spheres.setColors([
+        0xffffff * Math.random(), 
+        0xffffff * Math.random(), 
+        0xffffff * Math.random()
+      ]);
+    }
+  };
 
   return (
     <>
@@ -117,7 +126,7 @@ export default function LoginPage() {
           z-index: 1;
           width: 100%;
           height: 100%;
-          pointer-events: auto; /* allows interaction with spheres */
+          pointer-events: auto;
         }
 
         #login-app .buttons {
@@ -134,18 +143,19 @@ export default function LoginPage() {
         #login-app button, #login-app a {
           color: black;
           font-family: "Montserrat", sans-serif;
-          font-size: 12px;
+          font-size: 14px;
           text-decoration: none;
-          background: rgba(255, 255, 255, 0.7);
-          border-radius: 5px;
+          background: rgba(255, 255, 255, 0.8);
+          border-radius: 6px;
           border: 1px solid grey;
-          padding: 8px 16px;
+          padding: 10px 20px;
           cursor: pointer;
           transition: all 0.2s;
         }
 
         #login-app button:hover, #login-app a:hover {
           background: rgba(255, 255, 255, 1);
+          transform: translateY(-2px);
         }
 
         #login-app .enter-btn {
@@ -165,11 +175,11 @@ export default function LoginPage() {
           <h2>Dashboard</h2>
         </div>
         <div className="buttons">
-          <button type="button" id="gravity-btn">Toggle gravity</button>
-          <button type="button" id="colors-btn">Random colors</button>
+          <button type="button" onClick={toggleGravity}>Toggle gravity</button>
+          <button type="button" onClick={randomColors}>Random colors</button>
           <Link href="/" className="enter-btn">Enter Dashboard &rarr;</Link>
         </div>
-        <div id="canvas-container"></div>
+        <canvas id="webgl-canvas" ref={canvasRef}></canvas>
       </div>
     </>
   );
