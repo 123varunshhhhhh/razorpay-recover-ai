@@ -5,7 +5,18 @@ import Head from "next/head";
 
 export default function LoginPage() {
   useEffect(() => {
-    // Dynamically inject the ES module script for the 3D background
+    // 1. Create a fresh canvas to avoid WebGL context loss in React Strict Mode
+    const canvasContainer = document.getElementById('canvas-container');
+    if (!canvasContainer) return;
+    
+    // Clear any existing canvas
+    canvasContainer.innerHTML = '';
+    
+    const canvas = document.createElement('canvas');
+    canvas.id = 'webgl-canvas';
+    canvasContainer.appendChild(canvas);
+
+    // 2. Dynamically inject the ES module script for the 3D background
     const script = document.createElement("script");
     script.type = "module";
     script.innerHTML = `
@@ -38,13 +49,10 @@ export default function LoginPage() {
       if (document.body.contains(script)) {
         document.body.removeChild(script);
       }
-      const canvas = document.getElementById('webgl-canvas');
-      if (canvas) {
-        // Clear canvas context on unmount to prevent memory leaks in Next.js SPA navigation
-        const gl = (canvas as HTMLCanvasElement).getContext('webgl2') || (canvas as HTMLCanvasElement).getContext('webgl');
-        if (gl) {
-          gl.getExtension('WEBGL_lose_context')?.loseContext();
-        }
+      const existingCanvas = document.getElementById('webgl-canvas');
+      if (existingCanvas) {
+        // Just remove the canvas entirely, getting rid of the WebGL context safely
+        existingCanvas.remove();
       }
     };
   }, []);
@@ -161,7 +169,7 @@ export default function LoginPage() {
           <button type="button" id="colors-btn">Random colors</button>
           <Link href="/" className="enter-btn">Enter Dashboard &rarr;</Link>
         </div>
-        <canvas id="webgl-canvas"></canvas>
+        <div id="canvas-container"></div>
       </div>
     </>
   );
